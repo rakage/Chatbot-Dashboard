@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id               String            @id @default(cuid())
+  email            String            @unique
+  name             String?
+  role             Role              @default(AGENT)
+  companyId        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  password         String?
+  accounts         Account[]
+  documents        Document[]
+  sessions         Session[]
+  trainingSessions TrainingSession[]
+  company          Company?          @relation(fields: [companyId], references: [id])
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Company {
+  id               String            @id @default(cuid())
+  name             String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  documentChunks   DocumentChunk[]
+  documents        Document[]
+  pages            PageConnection[]
+  providerConfig   ProviderConfig?
+  trainingSessions TrainingSession[]
+  users            User[]
+  vectorSearches   VectorSearch[]
+
+  @@map("companies")
+}
+
+model ProviderConfig {
+  id           String   @id @default(cuid())
+  companyId    String   @unique
+  provider     Provider @default(OPENAI)
+  apiKeyEnc    String
+  model        String
+  temperature  Float    @default(0.3)
+  maxTokens    Int      @default(512)
+  systemPrompt String   @default("You are a helpful, brand-safe support assistant...")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("provider_configs")
+}
+
+model PageConnection {
+  id                 String         @id @default(cuid())
+  companyId          String
+  pageId             String         @unique
+  pageName           String
+  pageAccessTokenEnc String
+  verifyTokenEnc     String
+  subscribed         Boolean        @default(false)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  conversations      Conversation[]
+  company            Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("page_connections")
+}
+
+model Conversation {
+  id              String         @id @default(cuid())
+  pageId          String
+  psid            String
+  status          ConvStatus     @default(OPEN)
+  autoBot         Boolean        @default(false)
+  lastMessageAt   DateTime       @default(now())
+  assigneeId      String?
+  notes           String?
+  tags            String[]       @default([])
+  customerEmail   String?
+  customerPhone   String?
+  customerAddress String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  meta            Json?
+  page            PageConnection @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  messages        Message[]
+
+  @@unique([pageId, psid])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           MsgRole
+  text           String
+  providerUsed   Provider?
+  meta           Json?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Document {
+  id               String            @id @default(cuid())
+  companyId        String
+  filename         String
+  originalName     String
+  fileType         DocumentType
+  fileSize         Int
+  filePath         String
+  extractedText    String?
+  status           DocumentStatus    @default(UPLOADED)
+  uploadedById     String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  chunks           DocumentChunk[]
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User              @relation(fields: [uploadedById], references: [id])
+  trainingSessions TrainingSession[] @relation("DocumentToTrainingSession")
+
+  @@map("documents")
+}
+
+model TrainingSession {
+  id           String         @id @default(cuid())
+  companyId    String
+  status       TrainingStatus @default(PENDING)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  errorMessage String?
+  progress     Int            @default(0)
+  startedById  String
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  company      Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy    User           @relation(fields: [startedById], references: [id])
+  documents    Document[]     @relation("DocumentToTrainingSession")
+
+  @@map("training_sessions")
+}
+
+model DocumentChunk {
+  id          String   @id @default(cuid())
+  documentId  String
+  companyId   String
+  chunkIndex  Int
+  content     String
+  tokenCount  Int?
+  embedding   Float[]
+  embeddingId String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@map("document_chunks")
+}
+
+model VectorSearch {
+  id          String   @id @default(cuid())
+  companyId   String
+  query       String
+  results     Json
+  resultCount Int
+  createdAt   DateTime @default(now())
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("vector_searches")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  AGENT
+}
+
+enum Provider {
+  OPENAI
+  GEMINI
+  OPENROUTER
+}
+
+enum ConvStatus {
+  OPEN
+  SNOOZED
+  CLOSED
+}
+
+enum MsgRole {
+  USER
+  AGENT
+  BOT
+}
+
+enum DocumentType {
+  PDF
+  DOC
+  DOCX
+  TXT
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  PROCESSED
+  ERROR
+}
+
+enum TrainingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
