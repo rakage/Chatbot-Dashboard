@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -15,45 +15,163 @@ import {
   Bot,
   TrendingUp,
   Clock,
-  CheckCircle,
+  Activity,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight,
 } from "lucide-react";
+import DashboardCharts from "@/components/dashboard/DashboardCharts";
 
 interface DashboardStats {
   totalConversations: number;
+  conversationGrowth: number;
   activeConversations: number;
   totalMessages: number;
-  botResponses: number;
+  messageGrowth: number;
+  botMessages: number;
+  automationRate: number;
   avgResponseTime: string;
   satisfactionRate: number;
+  providerStats: Array<{ provider: string; count: number }>;
+}
+
+interface ChartData {
+  conversationTrends: Array<{ date: string; conversations: number }>;
+  messageTrends: Array<{
+    date: string;
+    userMessages: number;
+    botMessages: number;
+    agentMessages: number;
+    total: number;
+  }>;
+  hourlyActivity: Array<{
+    hour: string;
+    messages: number;
+    conversations: number;
+  }>;
 }
 
 export default function DashboardPage() {
   const { data: session } = useSession();
   const [stats, setStats] = useState<DashboardStats>({
     totalConversations: 0,
+    conversationGrowth: 0,
     activeConversations: 0,
     totalMessages: 0,
-    botResponses: 0,
+    messageGrowth: 0,
+    botMessages: 0,
+    automationRate: 0,
     avgResponseTime: "0s",
     satisfactionRate: 0,
+    providerStats: [],
+  });
+  const [chartData, setChartData] = useState<ChartData>({
+    conversationTrends: [],
+    messageTrends: [],
+    hourlyActivity: [],
   });
   const [loading, setLoading] = useState(true);
+  const [chartsLoading, setChartsLoading] = useState(true);
 
-  useEffect(() => {
-    // TODO: Fetch real stats from API
-    // For now, showing mock data
-    setTimeout(() => {
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      // Fetch stats and charts in parallel
+      const [statsResponse, chartsResponse] = await Promise.all([
+        fetch("/api/dashboard/stats"),
+        fetch("/api/dashboard/charts"),
+      ]);
+
+      if (statsResponse.ok) {
+        const statsData = await statsResponse.json();
+        setStats(statsData);
+      }
+
+      if (chartsResponse.ok) {
+        const chartsData = await chartsResponse.json();
+        console.log("Frontend received chart data:", chartsData);
+        console.log(
+          "Conversation trends last 3 days:",
+          chartsData.conversationTrends?.slice(-3)
+        );
+        console.log(
+          "Message trends last 3 days:",
+          chartsData.messageTrends?.slice(-3)
+        );
+        setChartData(chartsData);
+      }
+    } catch (error) {
+      console.error("Failed to fetch dashboard data:", error);
+      // Fallback to mock data
       setStats({
         totalConversations: 156,
+        conversationGrowth: 12,
         activeConversations: 23,
         totalMessages: 1247,
-        botResponses: 789,
+        messageGrowth: 8,
+        botMessages: 789,
+        automationRate: 63,
         avgResponseTime: "2.3s",
         satisfactionRate: 4.2,
+        providerStats: [
+          { provider: "OPENAI", count: 450 },
+          { provider: "GEMINI", count: 339 },
+        ],
       });
+
+      // Mock chart data
+      const mockConversationTrends = Array.from({ length: 30 }, (_, i) => {
+        const date = new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000);
+        return {
+          date: date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          }),
+          conversations: Math.floor(Math.random() * 20) + 5,
+        };
+      });
+
+      const mockMessageTrends = Array.from({ length: 30 }, (_, i) => {
+        const date = new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000);
+        const userMessages = Math.floor(Math.random() * 50) + 10;
+        const botMessages = Math.floor(Math.random() * 40) + 5;
+        const agentMessages = Math.floor(Math.random() * 15) + 2;
+        return {
+          date: date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          }),
+          userMessages,
+          botMessages,
+          agentMessages,
+          total: userMessages + botMessages + agentMessages,
+        };
+      });
+
+      const mockHourlyActivity = Array.from({ length: 24 }, (_, i) => ({
+        hour: `${i.toString().padStart(2, "0")}:00`,
+        messages: Math.floor(Math.random() * 30) + 5,
+        conversations: Math.floor(Math.random() * 10) + 1,
+      }));
+
+      setChartData({
+        conversationTrends: mockConversationTrends,
+        messageTrends: mockMessageTrends,
+        hourlyActivity: mockHourlyActivity,
+      });
+    } finally {
       setLoading(false);
-    }, 1000);
+      setChartsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (session?.user?.companyId) {
+      fetchDashboardData();
+    } else {
+      setLoading(false);
+      setChartsLoading(false);
+    }
+  }, [session?.user?.companyId, fetchDashboardData]);
 
   if (loading) {
     return (
@@ -82,7 +200,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -91,23 +209,28 @@ export default function DashboardPage() {
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalConversations}</div>
-            <p className="text-xs text-muted-foreground">
-              +12% from last month
-            </p>
+            <div className="text-2xl font-bold">
+              {stats.totalConversations.toLocaleString()}
+            </div>
+            <div className="flex items-center text-xs text-muted-foreground">
+              {stats.conversationGrowth > 0 ? (
+                <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3 text-red-500 mr-1" />
+              )}
+              {Math.abs(stats.conversationGrowth)}% from last month
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Active Conversations
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Active Now</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {stats.activeConversations}
+              {stats.activeConversations.toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">Currently ongoing</p>
           </CardContent>
@@ -118,28 +241,40 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">
               Total Messages
             </CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalMessages}</div>
-            <p className="text-xs text-muted-foreground">+8% from last week</p>
+            <div className="text-2xl font-bold">
+              {stats.totalMessages.toLocaleString()}
+            </div>
+            <div className="flex items-center text-xs text-muted-foreground">
+              {stats.messageGrowth > 0 ? (
+                <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3 text-red-500 mr-1" />
+              )}
+              {Math.abs(stats.messageGrowth)}% from last week
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Bot Responses</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Automation Rate
+            </CardTitle>
             <Bot className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.botResponses}</div>
+            <div className="text-2xl font-bold">{stats.automationRate}%</div>
             <p className="text-xs text-muted-foreground">
-              {Math.round((stats.botResponses / stats.totalMessages) * 100)}%
-              automation rate
+              {stats.botMessages.toLocaleString()} bot responses
             </p>
           </CardContent>
         </Card>
+      </div>
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -149,9 +284,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.avgResponseTime}</div>
-            <p className="text-xs text-muted-foreground">
-              -15% faster than target
-            </p>
+            <p className="text-xs text-muted-foreground">Target: &lt;5s</p>
           </CardContent>
         </Card>
 
@@ -169,87 +302,33 @@ export default function DashboardPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>
-              Latest conversations and bot interactions
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    New conversation started
-                  </p>
-                  <p className="text-xs text-gray-500">2 minutes ago</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Bot response sent</p>
-                  <p className="text-xs text-gray-500">5 minutes ago</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    Conversation assigned to agent
-                  </p>
-                  <p className="text-xs text-gray-500">12 minutes ago</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>System Status</CardTitle>
-            <CardDescription>
-              Current status of bot and integrations
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">LLM Provider</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm">Facebook Integration</span>
-                </div>
-                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
-                  Active
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm">AI Bot</span>
-                </div>
-                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
-                  Online
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm">Message Queue</span>
-                </div>
-                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
-                  Healthy
-                </span>
-              </div>
+            <div className="text-2xl font-bold">
+              {stats.providerStats.length > 0
+                ? stats.providerStats[0].provider
+                : "None"}
             </div>
+            <p className="text-xs text-muted-foreground">
+              {stats.providerStats
+                .reduce((sum, p) => sum + p.count, 0)
+                .toLocaleString()}{" "}
+              responses
+            </p>
           </CardContent>
         </Card>
       </div>
+
+      <DashboardCharts
+        key={`dashboard-charts-${session?.user?.companyId || "anonymous"}`}
+        chartData={chartData}
+        chartsLoading={chartsLoading}
+      />
     </div>
   );
 }

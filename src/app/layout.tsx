@@ -8,7 +8,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Facebook Bot Dashboard",
+  title: "Salsation Bot Dashboard",
   description:
     "Manage your Facebook Messenger chatbot with real-time conversations and AI integration",
 };
