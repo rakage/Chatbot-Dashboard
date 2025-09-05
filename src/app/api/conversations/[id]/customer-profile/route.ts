@@ -100,8 +100,6 @@ export async function GET(
           },
         },
       });
-      console.log("✅ Customer profile cached successfully");
-
       return NextResponse.json({
         profile: enhancedProfile,
         source: "facebook_api",

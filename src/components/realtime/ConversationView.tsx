@@ -17,8 +17,10 @@ import {
   AlertCircle,
   ExternalLink,
   Info,
+  Ticket,
 } from "lucide-react";
 import CustomerInfoSidebar from "./CustomerInfoSidebar";
+import CreateTicketModal from "@/components/freshdesk/CreateTicketModal";
 
 interface Message {
   id: string;
@@ -53,6 +55,14 @@ interface Conversation {
   customerEmail?: string | null;
   customerPhone?: string | null;
   customerAddress?: string | null;
+  freshdeskTickets?: Array<{
+    id: number;
+    url: string;
+    subject: string;
+    status: number;
+    priority: number;
+    createdAt: string;
+  }>;
 }
 
 interface ConversationViewProps {
@@ -88,6 +98,7 @@ export default function ConversationView({
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [createTicketModalOpen, setCreateTicketModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -582,6 +593,15 @@ export default function ConversationView({
                 <Info className="h-4 w-4" />
                 Customer Info
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateTicketModalOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Ticket className="h-4 w-4" />
+                Create Ticket
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -686,6 +706,36 @@ export default function ConversationView({
         onNotesUpdate={handleNotesUpdate}
         onTagsUpdate={handleTagsUpdate}
         onContactUpdate={handleContactUpdate}
+      />
+
+      {/* Create Ticket Modal */}
+      <CreateTicketModal
+        isOpen={createTicketModalOpen}
+        onClose={() => setCreateTicketModalOpen(false)}
+        conversationId={conversationId}
+        customerName={
+          customerProfile
+            ? `${customerProfile.firstName || ""} ${
+                customerProfile.lastName || ""
+              }`.trim()
+            : conversation?.customerName
+        }
+        customerEmail={conversation?.customerEmail || customerProfile?.email}
+        existingTickets={conversation?.freshdeskTickets || []}
+        onTicketCreated={(ticketData) => {
+          // Update conversation state with ticket info
+          setConversation((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  freshdeskTickets: ticketData.conversation.freshdeskTickets,
+                }
+              : null
+          );
+
+          // Close modal after successful creation
+          setTimeout(() => setCreateTicketModalOpen(false), 2000);
+        }}
       />
     </div>
   );

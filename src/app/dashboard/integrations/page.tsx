@@ -14,7 +14,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, CheckCircle, Facebook, Link, Unlink } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  Facebook,
+  Link,
+  Unlink,
+  Ticket,
+  Settings,
+  ExternalLink,
+} from "lucide-react";
 
 export default function IntegrationsPage() {
   const { data: session } = useSession();
@@ -367,6 +376,72 @@ export default function IntegrationsPage() {
                 </>
               )}
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* Freshdesk Integration */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Ticket className="h-5 w-5 text-blue-600" />
+              <span>Freshdesk Integration</span>
+            </CardTitle>
+            <CardDescription>
+              Create support tickets from chat conversations
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                  <Ticket className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900">
+                    Freshdesk Ticketing
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    salsationfitness.freshdesk.com
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    window.open(
+                      "https://salsationfitness.freshdesk.com",
+                      "_blank"
+                    )
+                  }
+                >
+                  <ExternalLink className="h-4 w-4 mr-1" />
+                  Open
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    router.push("/dashboard/integrations/freshdesk")
+                  }
+                >
+                  <Settings className="h-4 w-4 mr-1" />
+                  Configure
+                </Button>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-900 mb-2">Features</h4>
+              <ul className="list-disc list-inside text-sm text-blue-800 space-y-1">
+                <li>Manual ticket creation from conversations</li>
+                <li>Automatic conversation history inclusion</li>
+                <li>Customer information sync</li>
+                <li>Customizable priority and status</li>
+                <li>Direct links to created tickets</li>
+              </ul>
+            </div>
           </CardContent>
         </Card>
 

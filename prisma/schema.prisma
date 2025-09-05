@@ -37,17 +37,18 @@ model Session {
 }
 
 model Company {
-  id               String            @id @default(cuid())
-  name             String
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  documentChunks   DocumentChunk[]
-  documents        Document[]
-  pages            PageConnection[]
-  providerConfig   ProviderConfig?
-  trainingSessions TrainingSession[]
-  users            User[]
-  vectorSearches   VectorSearch[]
+  id                   String                @id @default(cuid())
+  name                 String
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  documentChunks       DocumentChunk[]
+  documents            Document[]
+  pages                PageConnection[]
+  providerConfig       ProviderConfig?
+  trainingSessions     TrainingSession[]
+  users                User[]
+  vectorSearches       VectorSearch[]
+  freshdeskIntegration FreshdeskIntegration?
 
   @@map("companies")
 }
@@ -85,23 +86,24 @@ model PageConnection {
 }
 
 model Conversation {
-  id              String         @id @default(cuid())
-  pageId          String
-  psid            String
-  status          ConvStatus     @default(OPEN)
-  autoBot         Boolean        @default(false)
-  lastMessageAt   DateTime       @default(now())
-  assigneeId      String?
-  notes           String?
-  tags            String[]       @default([])
-  customerEmail   String?
-  customerPhone   String?
-  customerAddress String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  meta            Json?
-  page            PageConnection @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  messages        Message[]
+  id               String         @id @default(cuid())
+  pageId           String
+  psid             String
+  status           ConvStatus     @default(OPEN)
+  autoBot          Boolean        @default(false)
+  lastMessageAt    DateTime       @default(now())
+  assigneeId       String?
+  notes            String?
+  tags             String[]       @default([])
+  customerEmail    String?
+  customerPhone    String?
+  customerAddress  String?
+  freshdeskTickets Json? // Array of {id: number, url: string, subject: string, createdAt: string}[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  meta             Json?
+  page             PageConnection @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  messages         Message[]
 
   @@unique([pageId, psid])
   @@map("conversations")
@@ -262,4 +264,23 @@ enum TrainingStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+model FreshdeskIntegration {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  domain          String // Freshdesk subdomain (e.g., "salsationfitness")
+  apiKeyEnc       String // Encrypted API key
+  enabled         Boolean  @default(false)
+  autoCreate      Boolean  @default(true) // Auto-create tickets on escalation
+  defaultPriority Int      @default(2) // Default ticket priority (1-4)
+  defaultStatus   Int      @default(2) // Default ticket status (2=Open)
+  defaultSource   Int      @default(7) // Default source (7=Chat, used for Facebook)
+  defaultGroupId  BigInt? // Default group ID for ticket assignment
+  escalationRules Json? // Custom escalation conditions
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("freshdesk_integrations")
 }

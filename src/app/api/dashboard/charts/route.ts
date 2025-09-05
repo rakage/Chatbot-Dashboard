@@ -17,11 +17,6 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    console.log("Date range setup:");
-    console.log("Now:", now.toISOString());
-    console.log("Thirty days ago:", thirtyDaysAgo.toISOString());
-    console.log("Today's date string:", now.toISOString().split("T")[0]);
-
     // Fetch message data for all charts (since your data appears to be stored in GMT+7 already)
     const [allMessages, todayMessages] = await Promise.all([
       // Get all messages for the last 30 days
@@ -120,17 +115,6 @@ export async function GET(request: NextRequest) {
       conversations: data.conversations.size,
     }));
 
-    console.log("Processed data:");
-    console.log(
-      "Conversations by date:",
-      Object.fromEntries(
-        Object.entries(conversationsByDate).map(([date, set]) => [
-          date,
-          set.size,
-        ])
-      )
-    );
-
     // Fill in missing dates with zero counts for conversation trends (include today)
     const conversationData = [];
     for (let i = 0; i <= 30; i++) {
@@ -143,12 +127,6 @@ export async function GET(request: NextRequest) {
         month: "short",
         day: "numeric",
       });
-
-      console.log(
-        `Date ${dateStr}: Found ${
-          existingData?.count || 0
-        } conversations, Display as: ${displayDate}`
-      );
 
       conversationData.push({
         date: displayDate,
@@ -173,10 +151,6 @@ export async function GET(request: NextRequest) {
       const botMessages = existingData?.bot_messages || 0;
       const agentMessages = existingData?.agent_messages || 0;
 
-      console.log(
-        `Date ${dateStr}: User=${userMessages}, Bot=${botMessages}, Agent=${agentMessages}, Display as: ${displayDate}`
-      );
-
       messageData.push({
         date: displayDate,
         userMessages,
@@ -196,11 +170,6 @@ export async function GET(request: NextRequest) {
         conversations: existingData?.conversations || 0,
       });
     }
-
-    console.log("Final chart data being returned:");
-    console.log("Conversation trends sample:", conversationData.slice(-3));
-    console.log("Message trends sample:", messageData.slice(-3));
-    console.log("Hourly data sample:", hourlyDataFormatted.slice(13, 16)); // Around 1-3 PM
 
     return NextResponse.json({
       conversationTrends: conversationData,
