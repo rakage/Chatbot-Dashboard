@@ -720,7 +720,7 @@ export default function ConversationView({
               }`.trim()
             : conversation?.customerName
         }
-        customerEmail={conversation?.customerEmail || customerProfile?.email}
+        customerEmail={conversation?.customerEmail || undefined}
         existingTickets={conversation?.freshdeskTickets || []}
         onTicketCreated={(ticketData) => {
           // Update conversation state with ticket info

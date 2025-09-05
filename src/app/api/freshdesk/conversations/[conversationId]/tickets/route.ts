@@ -77,7 +77,7 @@ export async function GET(
     // For now, return empty array since we don't have a way to track tickets per conversation
     // In a future enhancement, we could store ticket IDs in conversation metadata
     // and fetch them from Freshdesk API
-    const tickets = [];
+    const tickets: any[] = [];
 
     return NextResponse.json({
       success: true,

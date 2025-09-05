@@ -109,12 +109,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if ticket already exists
-    if (conversation.freshdeskTicketId) {
+    const existingTickets = (conversation.freshdeskTickets as any[]) || [];
+    if (existingTickets.length > 0) {
+      const latestTicket = existingTickets[existingTickets.length - 1];
       return NextResponse.json(
         {
           error: "Ticket already exists for this conversation",
-          ticketId: conversation.freshdeskTicketId,
-          ticketUrl: conversation.freshdeskTicketUrl,
+          ticketId: latestTicket.id,
+          ticketUrl: latestTicket.url,
+          existingTickets: existingTickets,
         },
         { status: 400 }
       );
@@ -259,7 +262,7 @@ ${
     const ticketUrl = `https://${freshdeskConfig.domain}.freshdesk.com/a/tickets/${ticket.id}`;
 
     // Get existing tickets array or initialize empty array
-    const existingTickets = (conversation.freshdeskTickets as any[]) || [];
+    const currentTickets = (conversation.freshdeskTickets as any[]) || [];
 
     // Add new ticket to the array
     const newTicket = {
@@ -271,7 +274,7 @@ ${
       createdAt: ticket.created_at,
     };
 
-    const updatedTickets = [...existingTickets, newTicket];
+    const updatedTickets = [...currentTickets, newTicket];
 
     await db.conversation.update({
       where: { id: conversationId },
