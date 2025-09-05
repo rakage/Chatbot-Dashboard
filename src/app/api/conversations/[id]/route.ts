@@ -62,7 +62,7 @@ export async function GET(
       customerEmail: conversation.customerEmail,
       customerPhone: conversation.customerPhone,
       customerAddress: conversation.customerAddress,
-      freshdeskTickets: conversation.freshdeskTickets,
+      freshdeskTickets: (conversation as any).freshdeskTickets,
     };
 
     // Transform messages (reverse to get chronological order since we fetched desc)
