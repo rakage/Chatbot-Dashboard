@@ -134,6 +134,36 @@ class SocketService {
         });
       });
 
+      // Handle conversation view updates (real-time communication between ConversationView and ConversationsList)
+      socket.on(
+        "conversation:view-update",
+        (data: {
+          conversationId: string;
+          type: "new_message" | "message_sent" | "bot_status_changed" | "typing_start" | "typing_stop";
+          message?: { text: string; role: "USER" | "AGENT" | "BOT"; createdAt: string };
+          lastMessageAt?: string;
+          autoBot?: boolean;
+          timestamp: string;
+        }) => {
+          console.log(
+            `📡 Broadcasting conversation:view-update (${data.type}) for conversation ${data.conversationId}`
+          );
+          
+          // Broadcast to all clients in the conversation room AND company room
+          // This ensures both ConversationView and ConversationsList components receive the update
+          socket.to(`conversation:${data.conversationId}`).emit("conversation:view-update", data);
+          
+          // Also broadcast to company room so ConversationsList gets updates even when not in specific conversation room
+          if (socket.companyId) {
+            const targetRoom =
+              process.env.NODE_ENV === "development"
+                ? "company:dev-company"
+                : `company:${socket.companyId}`;
+            socket.to(targetRoom).emit("conversation:view-update", data);
+          }
+        }
+      );
+
       // Handle presence updates
       socket.on("presence:update", (status: "online" | "away" | "offline") => {
         if (socket.companyId) {

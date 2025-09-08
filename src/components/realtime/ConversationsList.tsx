@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useSocket } from "@/hooks/useSocket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,10 +36,10 @@ interface ConversationsListProps {
   selectedConversationId?: string;
 }
 
-export default function ConversationsList({
-  onSelectConversation,
-  selectedConversationId,
-}: ConversationsListProps) {
+const ConversationsList = forwardRef<
+  { handleViewUpdate: (data: any) => void },
+  ConversationsListProps
+>(({ onSelectConversation, selectedConversationId }, ref) => {
   const { socket, isConnected } = useSocket();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,6 +47,136 @@ export default function ConversationsList({
   const [filter, setFilter] = useState<"ALL" | "OPEN" | "UNREAD">("ALL");
   const [typingConversations, setTypingConversations] = useState<Set<string>>(new Set());
   const [typingTimeouts, setTypingTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map());
+  
+  // Handler for direct updates from ConversationView (same client)
+  const handleViewUpdate = (data: {
+    conversationId: string;
+    type: "new_message" | "message_sent" | "bot_status_changed" | "typing_start" | "typing_stop";
+    message?: { text: string; role: "USER" | "AGENT" | "BOT"; createdAt: string };
+    lastMessageAt?: string;
+    autoBot?: boolean;
+    timestamp: string;
+  }) => {
+    console.log("📥 ConversationsList: Received direct update from ConversationView:", data);
+    
+    try {
+      setConversations((prev) => {
+        const updated = prev.map((conv) => {
+          if (conv.id !== data.conversationId) return conv;
+          
+          let updatedConv = { ...conv };
+          
+          switch (data.type) {
+            case "new_message":
+            case "message_sent":
+              if (data.message && data.lastMessageAt) {
+                updatedConv = {
+                  ...conv,
+                  lastMessage: {
+                    text: data.message.text,
+                    role: data.message.role,
+                  },
+                  lastMessageAt: data.lastMessageAt,
+                  // Only increment unread count for non-agent messages when conversation is not selected
+                  unreadCount: 
+                    data.message.role !== "AGENT" && selectedConversationId !== conv.id
+                      ? conv.unreadCount + 1
+                      : conv.unreadCount,
+                };
+              }
+              break;
+              
+            case "bot_status_changed":
+              if (data.autoBot !== undefined) {
+                updatedConv = {
+                  ...conv,
+                  autoBot: data.autoBot,
+                };
+              }
+              break;
+              
+            case "typing_start":
+              console.log(`💬 User is typing in conversation ${data.conversationId}`);
+              setTypingConversations(prev => new Set(prev.add(data.conversationId)));
+              updatedConv = { ...conv, isTyping: true };
+              
+              // Clear any existing timeout for this conversation
+              setTypingTimeouts(prev => {
+                const existingTimeout = prev.get(data.conversationId);
+                if (existingTimeout) {
+                  clearTimeout(existingTimeout);
+                }
+                
+                // Set new timeout to auto-clear typing indicator after 10 seconds
+                const newTimeout = setTimeout(() => {
+                  console.log(`⏰ Typing timeout for conversation ${data.conversationId}`);
+                  setTypingConversations(typing => {
+                    const newSet = new Set(typing);
+                    newSet.delete(data.conversationId);
+                    return newSet;
+                  });
+                  setConversations(convs => 
+                    convs.map(c => 
+                      c.id === data.conversationId ? { ...c, isTyping: false } : c
+                    )
+                  );
+                }, 10000);
+                
+                const newMap = new Map(prev);
+                newMap.set(data.conversationId, newTimeout);
+                return newMap;
+              });
+              break;
+              
+            case "typing_stop":
+              console.log(`✋ User stopped typing in conversation ${data.conversationId}`);
+              setTypingConversations(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(data.conversationId);
+                return newSet;
+              });
+              
+              // Clear timeout for this conversation
+              setTypingTimeouts(prev => {
+                const existingTimeout = prev.get(data.conversationId);
+                if (existingTimeout) {
+                  clearTimeout(existingTimeout);
+                }
+                const newMap = new Map(prev);
+                newMap.delete(data.conversationId);
+                return newMap;
+              });
+              
+              updatedConv = { ...conv, isTyping: false };
+              break;
+          }
+          
+          return updatedConv;
+        });
+        
+        // Sort conversations by lastMessageAt (most recent first) for message events
+        if (data.type === "new_message" || data.type === "message_sent") {
+          const sorted = updated.sort(
+            (a, b) =>
+              new Date(b.lastMessageAt).getTime() -
+              new Date(a.lastMessageAt).getTime()
+          );
+          console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
+          return sorted;
+        }
+        
+        console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
+        return updated;
+      });
+    } catch (err) {
+      console.error("Error processing direct conversation update:", err, data);
+    }
+  };
+  
+  // Expose the handleViewUpdate method via ref
+  useImperativeHandle(ref, () => ({
+    handleViewUpdate,
+  }));
 
   // Debug socket connection status
   useEffect(() => {
@@ -72,6 +202,12 @@ export default function ConversationsList({
     console.log("🔌 ConversationsList: Setting up socket event listeners");
     console.log("🔌 ConversationsList: Socket connected:", socket.connected);
     console.log("🔌 ConversationsList: Socket ID:", socket.id);
+    
+    // Join company room to receive conversation updates
+    console.log("📜 ConversationsList: Joining company room for real-time updates");
+    if (process.env.NODE_ENV === "development") {
+      socket.emit("join:company", "dev-company");
+    }
 
     // Listen for new conversations
     socket.on(
@@ -530,16 +666,16 @@ export default function ConversationsList({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  console.log("🧪 Test: Simulating conversation:view-update event");
-                  if (socket && conversations.length > 0) {
+                  console.log("🧪 Test: Testing direct communication");
+                  if (conversations.length > 0) {
                     const testConversationId = conversations[0].id;
                     
-                    // Test new message update
+                    // Test direct update via handleViewUpdate
                     const testUpdateData = {
                       conversationId: testConversationId,
                       type: "new_message" as const,
                       message: {
-                        text: "Test real-time message from ConversationView",
+                        text: "Test direct update from ConversationView",
                         role: "USER" as const,
                         createdAt: new Date().toISOString(),
                       },
@@ -548,18 +684,18 @@ export default function ConversationsList({
                     };
 
                     console.log(
-                      "🧪 Test: Emitting conversation:view-update with:",
+                      "🧪 Test: Calling handleViewUpdate directly with:",
                       testUpdateData
                     );
                     
-                    // Simulate the socket event
-                    socket.emit("conversation:view-update", testUpdateData);
+                    // Test the direct communication
+                    handleViewUpdate(testUpdateData);
                   } else {
-                    console.log("🧪 Test: No socket or conversations available");
+                    console.log("🧪 Test: No conversations available");
                   }
                 }}
               >
-                Test Real-time
+                Test Direct
               </Button>
               
               <Button
@@ -713,4 +849,8 @@ export default function ConversationsList({
       </CardContent>
     </Card>
   );
-}
+});
+
+ConversationsList.displayName = "ConversationsList";
+
+export default ConversationsList;
