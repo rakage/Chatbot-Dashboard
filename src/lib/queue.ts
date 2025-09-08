@@ -5,6 +5,7 @@ import { decrypt } from "./encryption";
 import { Provider } from "@prisma/client";
 import { socketService } from "./socket";
 import { facebookAPI } from "./facebook";
+import { RAGChatbot } from "./rag-chatbot";
 
 // Lazy initialization to avoid Redis connection on module load
 let redis: any = null;
@@ -873,6 +874,349 @@ export async function initializeWorkers() {
     console.log("✅ Workers initialized successfully");
   } catch (error) {
     console.error("Failed to initialize workers:", error);
+  }
+}
+
+// Direct message processing function (fallback when Redis is unavailable)
+export async function processIncomingMessageDirect(
+  data: IncomingMessageJobData
+) {
+  const { pageId, senderId, messageText, timestamp } = data;
+
+  try {
+    console.log(
+      `🔍 Processing message directly for pageId: ${pageId}, senderId: ${senderId}`
+    );
+
+    // Find page connection by Facebook pageId
+    const pageConnection = await db.pageConnection.findUnique({
+      where: { pageId },
+    });
+
+    if (!pageConnection) {
+      console.error(
+        `❌ Page connection not found for Facebook pageId: ${pageId}`
+      );
+      throw new Error(
+        `Page connection not found for Facebook pageId: ${pageId}`
+      );
+    }
+
+    console.log(`✅ Page connection found:`, {
+      dbId: pageConnection.id,
+      facebookPageId: pageConnection.pageId,
+      pageName: pageConnection.pageName,
+    });
+
+    // Find or create conversation using the database ID, not Facebook pageId
+    let conversation = await db.conversation.findUnique({
+      where: {
+        pageId_psid: {
+          pageId: pageConnection.id, // Use database ID, not Facebook pageId
+          psid: senderId,
+        },
+      },
+    });
+
+    if (!conversation) {
+      console.log(
+        `📝 Creating new conversation for database pageId: ${pageConnection.id}, senderId: ${senderId}`
+      );
+
+      // Fetch customer profile from Facebook before creating conversation
+      let customerProfile = null;
+      try {
+        console.log(`🔍 Fetching customer profile for ${senderId}...`);
+        const pageAccessToken = await decrypt(
+          pageConnection.pageAccessTokenEnc
+        );
+        const profile = await facebookAPI.getUserProfile(
+          senderId,
+          pageAccessToken,
+          ["first_name", "last_name", "profile_pic", "locale"]
+        );
+
+        customerProfile = {
+          firstName: profile.first_name || "Unknown",
+          lastName: profile.last_name || "",
+          fullName: `${profile.first_name || "Unknown"} ${
+            profile.last_name || ""
+          }`.trim(),
+          profilePicture: profile.profile_pic || null,
+          locale: profile.locale || "en_US",
+          facebookUrl: `https://www.facebook.com/${senderId}`,
+          cached: true,
+          cachedAt: new Date().toISOString(),
+        };
+        console.log(`✅ Customer profile fetched:`, customerProfile);
+      } catch (profileError) {
+        console.error(
+          `❌ Failed to fetch customer profile for ${senderId}:`,
+          profileError
+        );
+        // Continue with conversation creation even if profile fetch fails
+      }
+
+      conversation = await db.conversation.create({
+        data: {
+          pageId: pageConnection.id, // Use database ID, not Facebook pageId
+          psid: senderId,
+          status: "OPEN",
+          autoBot: true, // Default to auto bot for new conversations
+          lastMessageAt: new Date(),
+          tags: [],
+          meta: customerProfile ? { customerProfile } : undefined,
+        },
+      });
+      console.log(`✅ Conversation created with ID: ${conversation.id}`);
+
+      // Emit new conversation event to company room
+      try {
+        socketService.emitToCompany(
+          pageConnection.companyId,
+          "conversation:new",
+          {
+            conversation: {
+              id: conversation.id,
+              psid: conversation.psid,
+              status: conversation.status,
+              autoBot: conversation.autoBot,
+              customerName:
+                customerProfile?.fullName || `Customer ${senderId.slice(-4)}`,
+              customerProfile: customerProfile,
+              lastMessageAt: conversation.lastMessageAt,
+              messageCount: 0,
+              unreadCount: 1,
+            },
+          }
+        );
+        console.log(
+          `✅ Emitted conversation:new event for conversation ${conversation.id} to company ${pageConnection.companyId}`
+        );
+
+        // Also emit to development company room
+        if (process.env.NODE_ENV === "development") {
+          socketService.emitToCompany("dev-company", "conversation:new", {
+            conversation: {
+              id: conversation.id,
+              psid: conversation.psid,
+              status: conversation.status,
+              autoBot: conversation.autoBot,
+              customerName:
+                customerProfile?.fullName || `Customer ${senderId.slice(-4)}`,
+              customerProfile: customerProfile,
+              lastMessageAt: conversation.lastMessageAt,
+              messageCount: 0,
+              unreadCount: 1,
+            },
+          });
+          console.log(`✅ Emitted conversation:new event to dev-company room`);
+        }
+      } catch (emitError) {
+        console.error("❌ Failed to emit conversation:new event:", emitError);
+      }
+    } else {
+      console.log(`✅ Existing conversation found with ID: ${conversation.id}`);
+    }
+
+    // Create message record
+    const message = await db.message.create({
+      data: {
+        conversationId: conversation.id,
+        text: messageText,
+        role: "USER",
+        meta: {
+          facebookMessageId: `fb_${timestamp}`,
+          timestamp: timestamp,
+          source: "facebook_webhook",
+        },
+      },
+    });
+
+    console.log(`✅ Message saved with ID: ${message.id}`);
+
+    // Update conversation lastMessageAt
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date() },
+    });
+
+    // Emit real-time event for new message
+    try {
+      const fullMessage = await db.message.findUnique({
+        where: { id: message.id },
+        include: {
+          conversation: {
+            include: {
+              page: {
+                include: {
+                  company: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (fullMessage) {
+        // Emit to conversation room
+        const messageEvent = {
+          message: {
+            id: fullMessage.id,
+            text: fullMessage.text,
+            role: fullMessage.role,
+            createdAt: fullMessage.createdAt.toISOString(),
+            meta: fullMessage.meta,
+          },
+          conversation: {
+            id: conversation.id,
+            psid: conversation.psid,
+            status: conversation.status,
+            autoBot: conversation.autoBot,
+          },
+        };
+
+        console.log(
+          `📡 Emitting message:new to conversation:${conversation.id}`,
+          messageEvent
+        );
+        socketService.emitToConversation(
+          conversation.id,
+          "message:new",
+          messageEvent
+        );
+
+        // Emit to company room for dashboard updates
+        const messageCount = await db.message.count({
+          where: { conversationId: conversation.id },
+        });
+
+        // Emit conversation:updated for statistics
+        socketService.emitToCompany(
+          fullMessage.conversation.page.company.id,
+          "conversation:updated",
+          {
+            conversationId: conversation.id,
+            lastMessageAt: new Date().toISOString(),
+            messageCount: messageCount,
+          }
+        );
+
+        // Emit message:new for conversation list updates with last message preview
+        socketService.emitToCompany(
+          fullMessage.conversation.page.company.id,
+          "message:new",
+          messageEvent
+        );
+
+        // Also emit to development company room
+        if (process.env.NODE_ENV === "development") {
+          socketService.emitToCompany("dev-company", "conversation:updated", {
+            conversationId: conversation.id,
+            lastMessageAt: new Date().toISOString(),
+            messageCount: messageCount,
+          });
+
+          socketService.emitToCompany(
+            "dev-company",
+            "message:new",
+            messageEvent
+          );
+        }
+      }
+    } catch (emitError) {
+      console.error("❌ Failed to emit real-time events:", emitError);
+    }
+
+    // Handle auto-bot response if enabled
+    if (conversation.autoBot) {
+      console.log(`🤖 Auto-bot enabled for conversation ${conversation.id}`);
+      try {
+        // Generate bot response using RAG
+        const botResponse = await RAGChatbot.generateResponse(
+          messageText,
+          pageConnection.companyId,
+          conversation.id
+        );
+
+        if (botResponse.response) {
+          // Save bot response to database
+          const botMessage = await db.message.create({
+            data: {
+              conversationId: conversation.id,
+              text: botResponse.response,
+              role: "BOT",
+              meta: {
+                ragContext: JSON.parse(JSON.stringify(botResponse.context)),
+                ragUsage: botResponse.usage,
+                ragMemory: JSON.parse(JSON.stringify(botResponse.memory)),
+                timestamp: Date.now(),
+                source: "auto_bot",
+              },
+            },
+          });
+
+          console.log(`✅ Bot message saved with ID: ${botMessage.id}`);
+
+          // Send bot response via Facebook API
+          const pageAccessToken = await decrypt(
+            pageConnection.pageAccessTokenEnc
+          );
+          await facebookAPI.sendMessage(pageAccessToken, {
+            recipient: { id: senderId },
+            message: { text: botResponse.response },
+          });
+
+          // Emit bot message to conversation room
+          const botMessageEvent = {
+            message: {
+              id: botMessage.id,
+              text: botMessage.text,
+              role: botMessage.role,
+              createdAt: botMessage.createdAt.toISOString(),
+              meta: botMessage.meta,
+            },
+            conversation: {
+              id: conversation.id,
+              psid: conversation.psid,
+              status: conversation.status,
+              autoBot: conversation.autoBot,
+            },
+          };
+
+          socketService.emitToConversation(
+            conversation.id,
+            "message:new",
+            botMessageEvent
+          );
+
+          // Emit to company room
+          socketService.emitToCompany(
+            pageConnection.companyId,
+            "message:new",
+            botMessageEvent
+          );
+
+          // Also emit to development company room
+          if (process.env.NODE_ENV === "development") {
+            socketService.emitToCompany(
+              "dev-company",
+              "message:new",
+              botMessageEvent
+            );
+          }
+
+          console.log(`✅ Bot response sent and emitted`);
+        }
+      } catch (botError) {
+        console.error("❌ Auto-bot response failed:", botError);
+      }
+    }
+
+    console.log(`✅ Message processing completed for ${senderId}`);
+  } catch (error) {
+    console.error("❌ Message processing failed:", error);
+    throw error;
   }
 }
 

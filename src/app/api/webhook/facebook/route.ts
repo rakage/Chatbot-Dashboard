@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { facebookAPI } from "@/lib/facebook";
 import { db } from "@/lib/db";
-import { getIncomingMessageQueue } from "@/lib/queue";
+import {
+  getIncomingMessageQueue,
+  processIncomingMessageDirect,
+} from "@/lib/queue";
 import { decrypt } from "@/lib/encryption";
 
 // Webhook verification (GET)
@@ -216,13 +219,29 @@ export async function POST(request: NextRequest) {
                 messageText,
                 timestamp,
               });
+              console.log(`✅ Message queued for processing via Redis`);
             } catch (queueError) {
               console.error(
                 "Failed to queue message (Redis unavailable):",
                 queueError
               );
-              // Continue processing without queue for development
-              // TODO: Implement direct message processing as fallback
+              // Fallback: Process message directly without Redis
+              console.log("🔄 Processing message directly (Redis fallback)");
+              try {
+                await processIncomingMessageDirect({
+                  pageId,
+                  senderId,
+                  messageText,
+                  timestamp,
+                });
+                console.log(`✅ Message processed directly without Redis`);
+              } catch (directProcessError) {
+                console.error(
+                  "❌ Direct message processing failed:",
+                  directProcessError
+                );
+                throw directProcessError;
+              }
             }
           } else if (facebookAPI.isDeliveryEvent(messagingEvent)) {
             // Handle delivery confirmation

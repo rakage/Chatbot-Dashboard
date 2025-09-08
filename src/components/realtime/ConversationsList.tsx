@@ -96,8 +96,8 @@ export default function ConversationsList({
         messageCount: number;
       }) => {
         console.log("📥 Received conversation:updated event:", data);
-        setConversations((prev) =>
-          prev.map((conv) =>
+        setConversations((prev) => {
+          const updated = prev.map((conv) =>
             conv.id === data.conversationId
               ? {
                   ...conv,
@@ -106,8 +106,15 @@ export default function ConversationsList({
                   unreadCount: conv.unreadCount + 1,
                 }
               : conv
-          )
-        );
+          );
+
+          // Sort conversations by lastMessageAt (most recent first)
+          return updated.sort(
+            (a, b) =>
+              new Date(b.lastMessageAt).getTime() -
+              new Date(a.lastMessageAt).getTime()
+          );
+        });
       }
     );
 
@@ -158,7 +165,12 @@ export default function ConversationsList({
             );
           }
 
-          return updated;
+          // Sort conversations by lastMessageAt (most recent first)
+          return updated.sort(
+            (a, b) =>
+              new Date(b.lastMessageAt).getTime() -
+              new Date(a.lastMessageAt).getTime()
+          );
         });
       }
     );
@@ -195,7 +207,12 @@ export default function ConversationsList({
       }
 
       const data = await response.json();
-      setConversations(data.conversations || []);
+      const sortedConversations = (data.conversations || []).sort(
+        (a: ConversationSummary, b: ConversationSummary) =>
+          new Date(b.lastMessageAt).getTime() -
+          new Date(a.lastMessageAt).getTime()
+      );
+      setConversations(sortedConversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);
     } finally {
