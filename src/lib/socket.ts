@@ -180,13 +180,20 @@ class SocketService {
   }
 
   emitToCompany(companyId: string, event: string, data: any) {
+    // In development mode, always emit to dev-company room since all users join it
+    const targetRoom =
+      process.env.NODE_ENV === "development"
+        ? "company:dev-company"
+        : `company:${companyId}`;
+
     if (this.io) {
-      this.io.to(`company:${companyId}`).emit(event, data);
+      console.log(`📡 Emitting ${event} to room ${targetRoom}`);
+      this.io.to(targetRoom).emit(event, data);
     } else if ((global as any).socketIO) {
       console.log(
-        `📡 Using global Socket.IO to emit ${event} to company:${companyId}`
+        `📡 Using global Socket.IO to emit ${event} to ${targetRoom}`
       );
-      (global as any).socketIO.to(`company:${companyId}`).emit(event, data);
+      (global as any).socketIO.to(targetRoom).emit(event, data);
     } else {
       console.warn(`⚠️ No Socket.IO instance available to emit ${event}`);
     }

@@ -108,9 +108,13 @@ export default function ConversationsList({
         };
         conversation: { id: string };
       }) => {
-        console.log("📥 Received message:new event:", data);
-        setConversations((prev) =>
-          prev.map((conv) =>
+        console.log("📥 ConversationsList: Received message:new event:", data);
+        console.log(
+          "📥 ConversationsList: Current conversations count:",
+          conversations.length
+        );
+        setConversations((prev) => {
+          const updated = prev.map((conv) =>
             conv.id === data.conversation.id
               ? {
                   ...conv,
@@ -125,8 +129,23 @@ export default function ConversationsList({
                       : conv.unreadCount + 1,
                 }
               : conv
-          )
-        );
+          );
+
+          const foundConversation = updated.find(
+            (conv) => conv.id === data.conversation.id
+          );
+          if (foundConversation) {
+            console.log(
+              `✅ ConversationsList: Updated conversation ${data.conversation.id} with new message`
+            );
+          } else {
+            console.log(
+              `⚠️ ConversationsList: Conversation ${data.conversation.id} not found in list`
+            );
+          }
+
+          return updated;
+        });
       }
     );
 

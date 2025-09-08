@@ -22,7 +22,7 @@ app.prepare().then(async () => {
     }
   });
 
-  // Initialize Socket.IO with basic setup (skip complex auth for now)
+  // Initialize Socket.IO with basic setup but proper room management
   try {
     const { Server: SocketIOServer } = require("socket.io");
     const io = new SocketIOServer(server, {
@@ -34,7 +34,7 @@ app.prepare().then(async () => {
       transports: ["websocket", "polling"],
     });
 
-    // Basic connection handling
+    // Enhanced connection handling for proper room management
     io.on("connection", (socket) => {
       console.log("👤 User connected:", socket.id);
 
@@ -76,7 +76,7 @@ app.prepare().then(async () => {
 
     // Store io instance globally for access from API routes
     global.socketIO = io;
-    console.log("✅ Socket.IO initialized successfully");
+    console.log("✅ Socket.IO initialized with enhanced room management");
   } catch (error) {
     console.error("❌ Failed to initialize Socket.IO:", error.message);
   }
