@@ -72,24 +72,66 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Emit real-time event to other users (not the sender)
+    // Emit real-time events to other users
     try {
-      // Only emit to company room for dashboard updates, not the individual conversation
-      // The sender already has the message optimistically
+      const messageCount = await db.message.count({
+        where: { conversationId: conversation.id },
+      });
+
+      // Emit conversation:updated for statistics
       socketService.emitToCompany(
         conversation.page.company.id,
         "conversation:updated",
         {
           conversationId: conversation.id,
           lastMessageAt: new Date(),
-          messageCount: await db.message.count({
-            where: { conversationId: conversation.id },
-          }),
+          messageCount: messageCount,
         }
       );
 
+      // Emit message:new for conversation list updates with message preview
+      const messageEvent = {
+        message: {
+          id: message.id,
+          text: message.text,
+          role: message.role,
+          createdAt: message.createdAt.toISOString(),
+          meta: message.meta,
+        },
+        conversation: {
+          id: conversation.id,
+          psid: conversation.psid,
+          status: conversation.status,
+          autoBot: conversation.autoBot,
+        },
+      };
+
+      socketService.emitToCompany(
+        conversation.page.company.id,
+        "message:new",
+        messageEvent
+      );
+
+      // Emit to conversation room for active viewers
+      socketService.emitToConversation(
+        conversationId,
+        "message:new",
+        messageEvent
+      );
+
+      // Also emit to development company room
+      if (process.env.NODE_ENV === "development") {
+        socketService.emitToCompany("dev-company", "conversation:updated", {
+          conversationId: conversation.id,
+          lastMessageAt: new Date(),
+          messageCount: messageCount,
+        });
+
+        socketService.emitToCompany("dev-company", "message:new", messageEvent);
+      }
+
       console.log(
-        `📢 Emitted conversation:updated to company ${conversation.page.company.id} for agent message`
+        `📢 Emitted message events to company ${conversation.page.company.id} for agent message`
       );
     } catch (socketError) {
       console.error("Failed to emit real-time events:", socketError);

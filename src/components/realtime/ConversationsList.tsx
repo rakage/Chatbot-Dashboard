@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FacebookIcon } from "@/components/ui/facebook-icon";
-import { MessageSquare, Search, User, Bot, Clock, Circle } from "lucide-react";
+import { MessageSquare, Search, User, Bot, Circle } from "lucide-react";
 
 interface ConversationSummary {
   id: string;
@@ -130,11 +130,25 @@ export default function ConversationsList({
       }
     );
 
+    // Listen for conversation read events from other clients
+    socket.on(
+      "conversation:read",
+      (data: { conversationId: string; timestamp: string }) => {
+        console.log("📥 Received conversation:read event:", data);
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === data.conversationId ? { ...conv, unreadCount: 0 } : conv
+          )
+        );
+      }
+    );
+
     return () => {
       console.log("🔌 Cleaning up socket event listeners");
       socket.off("conversation:new");
       socket.off("conversation:updated");
       socket.off("message:new");
+      socket.off("conversation:read");
     };
   }, [socket, selectedConversationId]);
 
@@ -201,15 +215,58 @@ export default function ConversationsList({
     }
   };
 
-  const handleConversationClick = (conversationId: string) => {
+  const handleConversationClick = async (conversationId: string) => {
     onSelectConversation(conversationId);
 
-    // Mark as read
+    // Mark as read in local state immediately for better UX
     setConversations((prev) =>
       prev.map((conv) =>
         conv.id === conversationId ? { ...conv, unreadCount: 0 } : conv
       )
     );
+
+    // Mark as read on server and emit socket event
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "mark_read",
+        }),
+      });
+
+      if (response.ok) {
+        console.log(`✅ Conversation ${conversationId} marked as read`);
+
+        // Emit socket event to notify other clients
+        if (socket) {
+          socket.emit("conversation:read", {
+            conversationId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } else {
+        console.error(
+          `❌ Failed to mark conversation ${conversationId} as read`
+        );
+        // Revert local state if server update failed
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === conversationId ? { ...conv, unreadCount: 1 } : conv
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Error marking conversation as read:", error);
+      // Revert local state if request failed
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === conversationId ? { ...conv, unreadCount: 1 } : conv
+        )
+      );
+    }
   };
 
   if (loading) {

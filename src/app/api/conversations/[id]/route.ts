@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { socketService } from "@/lib/socket";
 
 export async function GET(
   request: NextRequest,
@@ -102,7 +103,87 @@ export async function PATCH(
     const { id: conversationId } = await params;
     const body = await request.json();
 
-    // Validate input
+    // Handle different actions
+    if (body.action === "mark_read") {
+      // Get conversation with related data to check permissions
+      const conversation = await db.conversation.findUnique({
+        where: { id: conversationId },
+        include: {
+          page: {
+            include: {
+              company: true,
+            },
+          },
+        },
+      });
+
+      if (!conversation) {
+        return NextResponse.json(
+          { error: "Conversation not found" },
+          { status: 404 }
+        );
+      }
+
+      // Check access permissions
+      if (
+        session.user.companyId !== conversation.page.company.id &&
+        session.user.role !== "OWNER"
+      ) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+
+      // Update conversation to mark as read by this user
+      const updatedConversation = await db.conversation.update({
+        where: { id: conversationId },
+        data: {
+          assigneeId: session.user.id, // Assign to current user to mark as read
+          meta: {
+            ...((conversation.meta as any) || {}),
+            lastReadBy: session.user.id,
+            lastReadAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      console.log(
+        `✅ Conversation ${conversationId} marked as read by user ${session.user.id}`
+      );
+
+      // Emit socket event to notify other clients
+      try {
+        socketService.emitToCompany(
+          conversation.page.company.id,
+          "conversation:read",
+          {
+            conversationId,
+            userId: session.user.id,
+            timestamp: new Date().toISOString(),
+          }
+        );
+
+        // Also emit to development company room
+        if (process.env.NODE_ENV === "development") {
+          socketService.emitToCompany("dev-company", "conversation:read", {
+            conversationId,
+            userId: session.user.id,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (emitError) {
+        console.error("❌ Failed to emit conversation:read event:", emitError);
+      }
+
+      return NextResponse.json({
+        success: true,
+        conversation: {
+          id: updatedConversation.id,
+          assigneeId: updatedConversation.assigneeId,
+          lastReadAt: (updatedConversation.meta as any)?.lastReadAt,
+        },
+      });
+    }
+
+    // Validate input for regular updates
     const { notes, tags, customerEmail, customerPhone, customerAddress } = body;
 
     if (notes !== undefined && typeof notes !== "string") {

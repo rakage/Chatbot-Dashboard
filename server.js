@@ -56,6 +56,19 @@ app.prepare().then(async () => {
         socket.emit("left:conversation", { conversationId });
       });
 
+      // Handle conversation read events
+      socket.on("conversation:read", (data) => {
+        console.log(
+          `📖 User ${socket.id} marked conversation ${data.conversationId} as read`
+        );
+
+        // Broadcast to all clients in the company room (except sender)
+        socket.to("company:dev-company").emit("conversation:read", {
+          conversationId: data.conversationId,
+          timestamp: data.timestamp,
+        });
+      });
+
       socket.on("disconnect", () => {
         console.log("👤 User disconnected:", socket.id);
       });

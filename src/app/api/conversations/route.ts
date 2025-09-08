@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
         customerProfile?.fullName ||
         (conv.psid ? `Customer ${conv.psid.slice(-4)}` : "Unknown Customer");
 
+      // If no customer profile exists, we could fetch it here in the background
+      // For now, we'll just use the existing data or fallback name
+
       return {
         id: conv.id,
         psid: conv.psid,

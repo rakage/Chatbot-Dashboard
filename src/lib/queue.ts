@@ -4,6 +4,7 @@ import { llmService } from "./llm/service";
 import { decrypt } from "./encryption";
 import { Provider } from "@prisma/client";
 import { socketService } from "./socket";
+import { facebookAPI } from "./facebook";
 
 // Lazy initialization to avoid Redis connection on module load
 let redis: any = null;
@@ -193,6 +194,41 @@ export async function initializeWorkers() {
               console.log(
                 `📝 Creating new conversation for database pageId: ${pageConnection.id}, senderId: ${senderId}`
               );
+
+              // Fetch customer profile from Facebook before creating conversation
+              let customerProfile = null;
+              try {
+                console.log(`🔍 Fetching customer profile for ${senderId}...`);
+                const pageAccessToken = await decrypt(
+                  pageConnection.pageAccessTokenEnc
+                );
+                const profile = await facebookAPI.getUserProfile(
+                  senderId,
+                  pageAccessToken,
+                  ["first_name", "last_name", "profile_pic", "locale"]
+                );
+
+                customerProfile = {
+                  firstName: profile.first_name || "Unknown",
+                  lastName: profile.last_name || "",
+                  fullName: `${profile.first_name || "Unknown"} ${
+                    profile.last_name || ""
+                  }`.trim(),
+                  profilePicture: profile.profile_pic || null,
+                  locale: profile.locale || "en_US",
+                  facebookUrl: `https://www.facebook.com/${senderId}`,
+                  cached: true,
+                  cachedAt: new Date().toISOString(),
+                };
+                console.log(`✅ Customer profile fetched:`, customerProfile);
+              } catch (profileError) {
+                console.error(
+                  `❌ Failed to fetch customer profile for ${senderId}:`,
+                  profileError
+                );
+                // Continue with conversation creation even if profile fetch fails
+              }
+
               conversation = await db.conversation.create({
                 data: {
                   pageId: pageConnection.id, // Use database ID, not Facebook pageId
@@ -201,6 +237,7 @@ export async function initializeWorkers() {
                   autoBot: true, // Default to auto bot for new conversations
                   lastMessageAt: new Date(),
                   tags: [],
+                  meta: customerProfile ? { customerProfile } : undefined,
                 },
               });
               console.log(
@@ -218,6 +255,10 @@ export async function initializeWorkers() {
                       psid: conversation.psid,
                       status: conversation.status,
                       autoBot: conversation.autoBot,
+                      customerName:
+                        customerProfile?.fullName ||
+                        `Customer ${senderId.slice(-4)}`,
+                      customerProfile: customerProfile,
                       lastMessageAt: conversation.lastMessageAt,
                       messageCount: 0,
                       unreadCount: 1,
@@ -239,6 +280,10 @@ export async function initializeWorkers() {
                         psid: conversation.psid,
                         status: conversation.status,
                         autoBot: conversation.autoBot,
+                        customerName:
+                          customerProfile?.fullName ||
+                          `Customer ${senderId.slice(-4)}`,
+                        customerProfile: customerProfile,
                         lastMessageAt: conversation.lastMessageAt,
                         messageCount: 0,
                         unreadCount: 1,
@@ -352,6 +397,7 @@ export async function initializeWorkers() {
                   where: { conversationId: conversation.id },
                 });
 
+                // Emit conversation:updated for statistics
                 socketService.emitToCompany(
                   fullMessage.conversation.page.company.id,
                   "conversation:updated",
@@ -360,6 +406,13 @@ export async function initializeWorkers() {
                     lastMessageAt: new Date().toISOString(),
                     messageCount: messageCount,
                   }
+                );
+
+                // Emit message:new for conversation list updates with last message preview
+                socketService.emitToCompany(
+                  fullMessage.conversation.page.company.id,
+                  "message:new",
+                  messageEvent
                 );
 
                 // Also emit to development company room
@@ -372,6 +425,13 @@ export async function initializeWorkers() {
                       lastMessageAt: new Date().toISOString(),
                       messageCount: messageCount,
                     }
+                  );
+
+                  // Emit message:new for conversation list updates in dev mode
+                  socketService.emitToCompany(
+                    "dev-company",
+                    "message:new",
+                    messageEvent
                   );
                 }
               }
@@ -661,11 +721,29 @@ export async function initializeWorkers() {
                 `📡 Emitting bot message:new to conversation:${conversationId}`,
                 botMessageEvent
               );
+
+              // Emit to conversation room for active viewers
               socketService.emitToConversation(
                 conversationId,
                 "message:new",
                 botMessageEvent
               );
+
+              // Emit to company room for conversation list updates
+              socketService.emitToCompany(
+                conversation.page.company.id,
+                "message:new",
+                botMessageEvent
+              );
+
+              // Also emit to development company room
+              if (process.env.NODE_ENV === "development") {
+                socketService.emitToCompany(
+                  "dev-company",
+                  "message:new",
+                  botMessageEvent
+                );
+              }
             } catch (socketError) {
               console.error(
                 "Failed to emit bot message real-time event:",
