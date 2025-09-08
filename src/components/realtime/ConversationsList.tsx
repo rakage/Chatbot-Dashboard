@@ -47,6 +47,8 @@ const ConversationsList = forwardRef<
   const [filter, setFilter] = useState<"ALL" | "OPEN" | "UNREAD">("ALL");
   const [typingConversations, setTypingConversations] = useState<Set<string>>(new Set());
   const [typingTimeouts, setTypingTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map());
+  const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
+  const [updateSource, setUpdateSource] = useState<string | null>(null);
   
   // Handler for direct updates from ConversationView (same client)
   const handleViewUpdate = useCallback((data: {
@@ -172,9 +174,14 @@ const ConversationsList = forwardRef<
               return sorted;
             }
             
-            console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
-            return updated;
-          });
+        console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
+        
+        // Update status indicators
+        setLastUpdateTime(new Date().toLocaleTimeString());
+        setUpdateSource(`Direct: ${data.type}`);
+        
+        return updated;
+      });
     } catch (err) {
       console.error("Error processing direct conversation update:", err, data);
     }
@@ -450,11 +457,21 @@ const ConversationsList = forwardRef<
                 new Date(b.lastMessageAt).getTime() -
                 new Date(a.lastMessageAt).getTime()
             );
-            console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId}`);
+            console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (socket)`);
+            
+            // Update status indicators
+            setLastUpdateTime(new Date().toLocaleTimeString());
+            setUpdateSource(`Socket: ${data.type}`);
+            
             return sorted;
           }
           
-          console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId}`);
+          console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (socket)`);
+          
+          // Update status indicators
+          setLastUpdateTime(new Date().toLocaleTimeString());
+          setUpdateSource(`Socket: ${data.type}`);
+          
           return updated;
         });
         } catch (err) {
@@ -631,9 +648,21 @@ const ConversationsList = forwardRef<
             <MessageSquare className="h-5 w-5" />
             <span>Conversations</span>
           </CardTitle>
-          <Badge variant={isConnected ? "default" : "destructive"}>
-            {isConnected ? "Live" : "Offline"}
-          </Badge>
+          <div className="flex items-center space-x-2">
+            <Badge variant={isConnected ? "default" : "destructive"}>
+              {isConnected ? "Live" : "Offline"}
+            </Badge>
+            {lastUpdateTime && (
+              <Badge variant="outline" className="text-xs">
+                Last: {lastUpdateTime}
+              </Badge>
+            )}
+            {updateSource && (
+              <Badge variant="secondary" className="text-xs">
+                {updateSource}
+              </Badge>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -682,7 +711,7 @@ const ConversationsList = forwardRef<
                       conversationId: testConversationId,
                       type: "new_message" as const,
                       message: {
-                        text: "Test direct update from ConversationView",
+                        text: `Test message at ${new Date().toLocaleTimeString()}`,
                         role: "USER" as const,
                         createdAt: new Date().toISOString(),
                       },
@@ -703,6 +732,41 @@ const ConversationsList = forwardRef<
                 }}
               >
                 Test Direct
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  console.log("🧪 Test: Testing socket communication");
+                  if (socket && conversations.length > 0) {
+                    const testConversationId = conversations[0].id;
+                    
+                    const testSocketData = {
+                      conversationId: testConversationId,
+                      type: "new_message" as const,
+                      message: {
+                        text: `Socket test message at ${new Date().toLocaleTimeString()}`,
+                        role: "AGENT" as const,
+                        createdAt: new Date().toISOString(),
+                      },
+                      lastMessageAt: new Date().toISOString(),
+                      timestamp: new Date().toISOString(),
+                    };
+
+                    console.log(
+                      "🧪 Test: Emitting conversation:view-update via socket with:",
+                      testSocketData
+                    );
+                    
+                    // Test socket communication
+                    socket.emit("conversation:view-update", testSocketData);
+                  } else {
+                    console.log("🧪 Test: No socket or conversations available");
+                  }
+                }}
+              >
+                Test Socket
               </Button>
               
               <Button
