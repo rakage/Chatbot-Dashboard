@@ -2,7 +2,6 @@ const { createServer } = require("http");
 const { parse } = require("url");
 const next = require("next");
 
-// Force production mode for built app
 const dev = false; // Always use production mode for real-time server
 const hostname = "localhost";
 const port = parseInt(process.env.PORT || "3000", 10);
