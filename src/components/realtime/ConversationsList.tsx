@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
 import { useSocket } from "@/hooks/useSocket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +49,7 @@ const ConversationsList = forwardRef<
   const [typingTimeouts, setTypingTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map());
   
   // Handler for direct updates from ConversationView (same client)
-  const handleViewUpdate = (data: {
+  const handleViewUpdate = useCallback((data: {
     conversationId: string;
     type: "new_message" | "message_sent" | "bot_status_changed" | "typing_start" | "typing_stop";
     message?: { text: string; role: "USER" | "AGENT" | "BOT"; createdAt: string };
@@ -61,122 +61,129 @@ const ConversationsList = forwardRef<
     
     try {
       setConversations((prev) => {
+        // Check if conversation exists in current state
+        const conversationExists = prev.find(conv => conv.id === data.conversationId);
+        if (!conversationExists) {
+          console.warn(`⚠️ ConversationsList: Conversation ${data.conversationId} not found in list, skipping direct update`);
+          return prev;
+        }
+        
         const updated = prev.map((conv) => {
           if (conv.id !== data.conversationId) return conv;
           
           let updatedConv = { ...conv };
-          
-          switch (data.type) {
-            case "new_message":
-            case "message_sent":
-              if (data.message && data.lastMessageAt) {
-                updatedConv = {
-                  ...conv,
-                  lastMessage: {
-                    text: data.message.text,
-                    role: data.message.role,
-                  },
-                  lastMessageAt: data.lastMessageAt,
-                  // Only increment unread count for non-agent messages when conversation is not selected
-                  unreadCount: 
-                    data.message.role !== "AGENT" && selectedConversationId !== conv.id
-                      ? conv.unreadCount + 1
-                      : conv.unreadCount,
-                };
-              }
-              break;
               
-            case "bot_status_changed":
-              if (data.autoBot !== undefined) {
-                updatedConv = {
-                  ...conv,
-                  autoBot: data.autoBot,
-                };
-              }
-              break;
-              
-            case "typing_start":
-              console.log(`💬 User is typing in conversation ${data.conversationId}`);
-              setTypingConversations(prev => new Set(prev.add(data.conversationId)));
-              updatedConv = { ...conv, isTyping: true };
-              
-              // Clear any existing timeout for this conversation
-              setTypingTimeouts(prev => {
-                const existingTimeout = prev.get(data.conversationId);
-                if (existingTimeout) {
-                  clearTimeout(existingTimeout);
-                }
-                
-                // Set new timeout to auto-clear typing indicator after 10 seconds
-                const newTimeout = setTimeout(() => {
-                  console.log(`⏰ Typing timeout for conversation ${data.conversationId}`);
-                  setTypingConversations(typing => {
-                    const newSet = new Set(typing);
+              switch (data.type) {
+                case "new_message":
+                case "message_sent":
+                  if (data.message && data.lastMessageAt) {
+                    updatedConv = {
+                      ...conv,
+                      lastMessage: {
+                        text: data.message.text,
+                        role: data.message.role,
+                      },
+                      lastMessageAt: data.lastMessageAt,
+                      // Only increment unread count for non-agent messages when conversation is not selected
+                      unreadCount: 
+                        data.message.role !== "AGENT" && selectedConversationId !== conv.id
+                          ? conv.unreadCount + 1
+                          : conv.unreadCount,
+                    };
+                  }
+                  break;
+                  
+                case "bot_status_changed":
+                  if (data.autoBot !== undefined) {
+                    updatedConv = {
+                      ...conv,
+                      autoBot: data.autoBot,
+                    };
+                  }
+                  break;
+                  
+                case "typing_start":
+                  console.log(`💬 User is typing in conversation ${data.conversationId}`);
+                  setTypingConversations(prev => new Set(prev.add(data.conversationId)));
+                  updatedConv = { ...conv, isTyping: true };
+                  
+                  // Clear any existing timeout for this conversation
+                  setTypingTimeouts(prev => {
+                    const existingTimeout = prev.get(data.conversationId);
+                    if (existingTimeout) {
+                      clearTimeout(existingTimeout);
+                    }
+                    
+                    // Set new timeout to auto-clear typing indicator after 10 seconds
+                    const newTimeout = setTimeout(() => {
+                      console.log(`⏰ Typing timeout for conversation ${data.conversationId}`);
+                      setTypingConversations(typing => {
+                        const newSet = new Set(typing);
+                        newSet.delete(data.conversationId);
+                        return newSet;
+                      });
+                      setConversations(convs => 
+                        convs.map(c => 
+                          c.id === data.conversationId ? { ...c, isTyping: false } : c
+                        )
+                      );
+                    }, 10000);
+                    
+                    const newMap = new Map(prev);
+                    newMap.set(data.conversationId, newTimeout);
+                    return newMap;
+                  });
+                  break;
+                  
+                case "typing_stop":
+                  console.log(`✋ User stopped typing in conversation ${data.conversationId}`);
+                  setTypingConversations(prev => {
+                    const newSet = new Set(prev);
                     newSet.delete(data.conversationId);
                     return newSet;
                   });
-                  setConversations(convs => 
-                    convs.map(c => 
-                      c.id === data.conversationId ? { ...c, isTyping: false } : c
-                    )
-                  );
-                }, 10000);
-                
-                const newMap = new Map(prev);
-                newMap.set(data.conversationId, newTimeout);
-                return newMap;
-              });
-              break;
+                  
+                  // Clear timeout for this conversation
+                  setTypingTimeouts(prev => {
+                    const existingTimeout = prev.get(data.conversationId);
+                    if (existingTimeout) {
+                      clearTimeout(existingTimeout);
+                    }
+                    const newMap = new Map(prev);
+                    newMap.delete(data.conversationId);
+                    return newMap;
+                  });
+                  
+                  updatedConv = { ...conv, isTyping: false };
+                  break;
+              }
               
-            case "typing_stop":
-              console.log(`✋ User stopped typing in conversation ${data.conversationId}`);
-              setTypingConversations(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(data.conversationId);
-                return newSet;
-              });
-              
-              // Clear timeout for this conversation
-              setTypingTimeouts(prev => {
-                const existingTimeout = prev.get(data.conversationId);
-                if (existingTimeout) {
-                  clearTimeout(existingTimeout);
-                }
-                const newMap = new Map(prev);
-                newMap.delete(data.conversationId);
-                return newMap;
-              });
-              
-              updatedConv = { ...conv, isTyping: false };
-              break;
-          }
-          
-          return updatedConv;
-        });
-        
-        // Sort conversations by lastMessageAt (most recent first) for message events
-        if (data.type === "new_message" || data.type === "message_sent") {
-          const sorted = updated.sort(
-            (a, b) =>
-              new Date(b.lastMessageAt).getTime() -
-              new Date(a.lastMessageAt).getTime()
-          );
-          console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
-          return sorted;
-        }
-        
-        console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
-        return updated;
-      });
+              return updatedConv;
+            });
+            
+            // Sort conversations by lastMessageAt (most recent first) for message events
+            if (data.type === "new_message" || data.type === "message_sent") {
+              const sorted = updated.sort(
+                (a, b) =>
+                  new Date(b.lastMessageAt).getTime() -
+                  new Date(a.lastMessageAt).getTime()
+              );
+              console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
+              return sorted;
+            }
+            
+            console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
+            return updated;
+          });
     } catch (err) {
       console.error("Error processing direct conversation update:", err, data);
     }
-  };
+  }, [selectedConversationId]);
   
   // Expose the handleViewUpdate method via ref
   useImperativeHandle(ref, () => ({
     handleViewUpdate,
-  }));
+  }), [handleViewUpdate]);
 
   // Debug socket connection status
   useEffect(() => {
