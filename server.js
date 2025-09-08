@@ -56,6 +56,20 @@ app.prepare().then(async () => {
         socket.emit("left:conversation", { conversationId });
       });
 
+      // Handle conversation view updates (real-time communication between ConversationView and ConversationsList)
+      socket.on("conversation:view-update", (data) => {
+        console.log(
+          `📡 User ${socket.id} emitted conversation:view-update (${data.type}) for conversation ${data.conversationId}`
+        );
+        
+        // Broadcast to all clients in the conversation room AND company room
+        // This ensures both ConversationView and ConversationsList components receive the update
+        socket.to(`conversation:${data.conversationId}`).emit("conversation:view-update", data);
+        
+        // Also broadcast to company room so ConversationsList gets updates even when not in specific conversation room
+        socket.to("company:dev-company").emit("conversation:view-update", data);
+      });
+
       // Handle conversation read events
       socket.on("conversation:read", (data) => {
         console.log(
