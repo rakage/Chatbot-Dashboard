@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use, useCallback, useRef } from "react";
+import { useState, use } from "react";
 import ConversationsList from "@/components/realtime/ConversationsList";
 import ConversationView from "@/components/realtime/ConversationView";
 
@@ -13,23 +13,6 @@ interface ConversationPageProps {
 export default function ConversationPage({ params }: ConversationPageProps) {
   const { id } = use(params);
   const [selectedConversationId, setSelectedConversationId] = useState(id);
-  const conversationListRef = useRef<{ handleViewUpdate: (data: any) => void } | null>(null);
-  
-  // Handler for real-time updates from ConversationView
-  const handleConversationUpdate = useCallback((data: {
-    conversationId: string;
-    type: "new_message" | "message_sent" | "bot_status_changed" | "typing_start" | "typing_stop";
-    message?: { text: string; role: "USER" | "AGENT" | "BOT"; createdAt: string };
-    lastMessageAt?: string;
-    autoBot?: boolean;
-    timestamp: string;
-  }) => {
-    console.log("📡 ConversationPage: Received update from ConversationView:", data);
-    // Forward the update to ConversationsList if we have a reference
-    if (conversationListRef.current && conversationListRef.current.handleViewUpdate) {
-      conversationListRef.current.handleViewUpdate(data);
-    }
-  }, []);
 
   return (
     <div className="space-y-6">
@@ -39,7 +22,6 @@ export default function ConversationPage({ params }: ConversationPageProps) {
         {/* Conversations List */}
         <div className="lg:col-span-1">
           <ConversationsList
-            ref={conversationListRef}
             onSelectConversation={setSelectedConversationId}
             selectedConversationId={selectedConversationId}
           />
@@ -48,10 +30,7 @@ export default function ConversationPage({ params }: ConversationPageProps) {
         {/* Conversation View */}
         <div className="lg:col-span-2 relative">
           {selectedConversationId ? (
-            <ConversationView 
-              conversationId={selectedConversationId} 
-              onConversationUpdate={handleConversationUpdate}
-            />
+            <ConversationView conversationId={selectedConversationId} />
           ) : (
             <div className="h-[600px] flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg">
               <div className="text-center">

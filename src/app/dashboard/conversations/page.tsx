@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState } from "react";
 import ConversationsList from "@/components/realtime/ConversationsList";
 import ConversationView from "@/components/realtime/ConversationView";
 import { MessageSquare } from "lucide-react";
@@ -9,23 +9,6 @@ export default function ConversationsPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<
     string | null
   >(null);
-  const conversationListRef = useRef<{ handleViewUpdate: (data: any) => void } | null>(null);
-  
-  // Handler for real-time updates from ConversationView
-  const handleConversationUpdate = useCallback((data: {
-    conversationId: string;
-    type: "new_message" | "message_sent" | "bot_status_changed" | "typing_start" | "typing_stop";
-    message?: { text: string; role: "USER" | "AGENT" | "BOT"; createdAt: string };
-    lastMessageAt?: string;
-    autoBot?: boolean;
-    timestamp: string;
-  }) => {
-    console.log("📡 ConversationsPage: Received update from ConversationView:", data);
-    // Forward the update to ConversationsList if we have a reference
-    if (conversationListRef.current && conversationListRef.current.handleViewUpdate) {
-      conversationListRef.current.handleViewUpdate(data);
-    }
-  }, []);
 
   return (
     <div className="space-y-6">
@@ -37,7 +20,6 @@ export default function ConversationsPage() {
         {/* Conversations List */}
         <div className="lg:col-span-1">
           <ConversationsList
-            ref={conversationListRef}
             onSelectConversation={setSelectedConversationId}
             selectedConversationId={selectedConversationId || undefined}
           />
@@ -46,10 +28,7 @@ export default function ConversationsPage() {
         {/* Conversation View */}
         <div className="lg:col-span-2">
           {selectedConversationId ? (
-            <ConversationView 
-              conversationId={selectedConversationId} 
-              onConversationUpdate={handleConversationUpdate}
-            />
+            <ConversationView conversationId={selectedConversationId} />
           ) : (
             <div className="h-[600px] flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
               <div className="text-center">

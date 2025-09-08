@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useSocket } from "@/hooks/useSocket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,475 +36,83 @@ interface ConversationsListProps {
   selectedConversationId?: string;
 }
 
-const ConversationsList = forwardRef<
-  { handleViewUpdate: (data: any) => void },
-  ConversationsListProps
->(({ onSelectConversation, selectedConversationId }, ref) => {
+export default function ConversationsList({
+  onSelectConversation,
+  selectedConversationId,
+}: ConversationsListProps) {
   const { socket, isConnected } = useSocket();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"ALL" | "OPEN" | "UNREAD">("ALL");
-  const [typingConversations, setTypingConversations] = useState<Set<string>>(new Set());
-  const [typingTimeouts, setTypingTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map());
-  const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
-  const [updateSource, setUpdateSource] = useState<string | null>(null);
-  
-  // Handler for direct updates from ConversationView (same client)
-  const handleViewUpdate = useCallback((data: {
-    conversationId: string;
-    type: "new_message" | "message_sent" | "bot_status_changed" | "typing_start" | "typing_stop";
-    message?: { text: string; role: "USER" | "AGENT" | "BOT"; createdAt: string };
-    lastMessageAt?: string;
-    autoBot?: boolean;
-    timestamp: string;
-  }) => {
-    console.log("📥 ConversationsList: Received direct update from ConversationView:", data);
-    
-    try {
-      setConversations((prev) => {
-        // Check if conversation exists in current state
-        const conversationExists = prev.find(conv => conv.id === data.conversationId);
-        if (!conversationExists) {
-          console.warn(`⚠️ ConversationsList: Conversation ${data.conversationId} not found in list, skipping direct update`);
-          return prev;
-        }
-        
-        const updated = prev.map((conv) => {
-          if (conv.id !== data.conversationId) return conv;
-          
-          let updatedConv = { ...conv };
-              
-              switch (data.type) {
-                case "new_message":
-                case "message_sent":
-                  if (data.message && data.lastMessageAt) {
-                    updatedConv = {
-                      ...conv,
-                      lastMessage: {
-                        text: data.message.text,
-                        role: data.message.role,
-                      },
-                      lastMessageAt: data.lastMessageAt,
-                      // Only increment unread count for non-agent messages when conversation is not selected
-                      unreadCount: 
-                        data.message.role !== "AGENT" && selectedConversationId !== conv.id
-                          ? conv.unreadCount + 1
-                          : conv.unreadCount,
-                    };
-                  }
-                  break;
-                  
-                case "bot_status_changed":
-                  if (data.autoBot !== undefined) {
-                    updatedConv = {
-                      ...conv,
-                      autoBot: data.autoBot,
-                    };
-                  }
-                  break;
-                  
-                case "typing_start":
-                  console.log(`💬 User is typing in conversation ${data.conversationId}`);
-                  setTypingConversations(prev => new Set(prev.add(data.conversationId)));
-                  updatedConv = { ...conv, isTyping: true };
-                  
-                  // Clear any existing timeout for this conversation
-                  setTypingTimeouts(prev => {
-                    const existingTimeout = prev.get(data.conversationId);
-                    if (existingTimeout) {
-                      clearTimeout(existingTimeout);
-                    }
-                    
-                    // Set new timeout to auto-clear typing indicator after 10 seconds
-                    const newTimeout = setTimeout(() => {
-                      console.log(`⏰ Typing timeout for conversation ${data.conversationId}`);
-                      setTypingConversations(typing => {
-                        const newSet = new Set(typing);
-                        newSet.delete(data.conversationId);
-                        return newSet;
-                      });
-                      setConversations(convs => 
-                        convs.map(c => 
-                          c.id === data.conversationId ? { ...c, isTyping: false } : c
-                        )
-                      );
-                    }, 10000);
-                    
-                    const newMap = new Map(prev);
-                    newMap.set(data.conversationId, newTimeout);
-                    return newMap;
-                  });
-                  break;
-                  
-                case "typing_stop":
-                  console.log(`✋ User stopped typing in conversation ${data.conversationId}`);
-                  setTypingConversations(prev => {
-                    const newSet = new Set(prev);
-                    newSet.delete(data.conversationId);
-                    return newSet;
-                  });
-                  
-                  // Clear timeout for this conversation
-                  setTypingTimeouts(prev => {
-                    const existingTimeout = prev.get(data.conversationId);
-                    if (existingTimeout) {
-                      clearTimeout(existingTimeout);
-                    }
-                    const newMap = new Map(prev);
-                    newMap.delete(data.conversationId);
-                    return newMap;
-                  });
-                  
-                  updatedConv = { ...conv, isTyping: false };
-                  break;
-              }
-              
-              return updatedConv;
-            });
-            
-            // Sort conversations by lastMessageAt (most recent first) for message events
-            if (data.type === "new_message" || data.type === "message_sent") {
-              const sorted = updated.sort(
-                (a, b) =>
-                  new Date(b.lastMessageAt).getTime() -
-                  new Date(a.lastMessageAt).getTime()
-              );
-              console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
-              return sorted;
-            }
-            
-        console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (direct)`);
-        
-        // Update status indicators
-        setLastUpdateTime(new Date().toLocaleTimeString());
-        setUpdateSource(`Direct: ${data.type}`);
-        
-        return updated;
-      });
-    } catch (err) {
-      console.error("Error processing direct conversation update:", err, data);
-    }
-  }, [selectedConversationId]);
-  
-  // Expose the handleViewUpdate method via ref
-  useImperativeHandle(ref, () => ({
-    handleViewUpdate,
-  }), [handleViewUpdate]);
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
+  const [isPolling, setIsPolling] = useState(true);
+  const [totalUnreadCount, setTotalUnreadCount] = useState(0);
+  const [newMessageNotification, setNewMessageNotification] = useState<string | null>(null);
 
-  // Debug socket connection status
+  // Polling mechanism for real-time updates
   useEffect(() => {
-    console.log("🔌 ConversationsList: Socket connection status changed:", {
+    let interval: NodeJS.Timeout;
+    
+    if (isPolling) {
+      // Initial fetch
+      fetchConversations();
+      
+      // Set up polling every 2 seconds
+      interval = setInterval(() => {
+        console.log("🔄 Polling for conversation updates...");
+        fetchConversations(true); // Pass true for silent update
+      }, 2000);
+      
+      console.log("✅ Started polling for real-time updates every 2 seconds");
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+        console.log("🛭 Stopped polling for real-time updates");
+      }
+    };
+  }, [isPolling]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().then(permission => {
+        console.log("🔔 Notification permission:", permission);
+      });
+    }
+  }, []);
+  
+  // Update page title with unread count
+  useEffect(() => {
+    if (totalUnreadCount > 0) {
+      document.title = `(${totalUnreadCount}) Facebook Bot Dashboard`;
+    } else {
+      document.title = "Facebook Bot Dashboard";
+    }
+    
+    return () => {
+      document.title = "Facebook Bot Dashboard";
+    };
+  }, [totalUnreadCount]);
+
+  // Simple socket connection status display
+  useEffect(() => {
+    console.log("🔌 ConversationsList: Socket connection status:", {
       isConnected,
       socketExists: !!socket,
       socketId: socket?.id,
     });
   }, [socket, isConnected]);
 
-  // Fetch conversations
-  useEffect(() => {
-    fetchConversations();
-  }, []);
 
-  // Socket event handlers
-  useEffect(() => {
-    if (!socket) {
-      console.log("❌ ConversationsList: No socket available");
-      return;
-    }
-
-    console.log("🔌 ConversationsList: Setting up socket event listeners");
-    console.log("🔌 ConversationsList: Socket connected:", socket.connected);
-    console.log("🔌 ConversationsList: Socket ID:", socket.id);
-    
-    // Join company room to receive conversation updates
-    console.log("📜 ConversationsList: Joining company room for real-time updates");
-    if (process.env.NODE_ENV === "development") {
-      socket.emit("join:company", "dev-company");
-    }
-
-    // Listen for new conversations
-    socket.on(
-      "conversation:new",
-      (data: { conversation: ConversationSummary }) => {
-        console.log("📥 Received conversation:new event:", data);
-        setConversations((prev) => {
-          // Check if conversation already exists
-          const exists = prev.find((conv) => conv.id === data.conversation.id);
-          if (exists) {
-            return prev;
-          }
-          // Add new conversation to the top of the list
-          return [data.conversation, ...prev];
-        });
-      }
-    );
-
-    // Listen for conversation updates
-    socket.on(
-      "conversation:updated",
-      (data: {
-        conversationId: string;
-        lastMessageAt: string;
-        messageCount: number;
-      }) => {
-        console.log("📥 Received conversation:updated event:", data);
-        setConversations((prev) => {
-          const updated = prev.map((conv) =>
-            conv.id === data.conversationId
-              ? {
-                  ...conv,
-                  lastMessageAt: data.lastMessageAt,
-                  messageCount: data.messageCount,
-                  unreadCount: conv.unreadCount + 1,
-                }
-              : conv
-          );
-
-          // Sort conversations by lastMessageAt (most recent first)
-          return updated.sort(
-            (a, b) =>
-              new Date(b.lastMessageAt).getTime() -
-              new Date(a.lastMessageAt).getTime()
-          );
-        });
-      }
-    );
-
-    // Listen for new messages to update last message preview
-    socket.on(
-      "message:new",
-      (data: {
-        message: {
-          text: string;
-          role: "USER" | "AGENT" | "BOT";
-          conversationId?: string;
-        };
-        conversation: { id: string };
-      }) => {
-        console.log("📥 ConversationsList: Received message:new event:", data);
-        console.log(
-          "📥 ConversationsList: Current conversations count:",
-          conversations.length
-        );
-        setConversations((prev) => {
-          const updated = prev.map((conv) =>
-            conv.id === data.conversation.id
-              ? {
-                  ...conv,
-                  lastMessage: {
-                    text: data.message.text,
-                    role: data.message.role,
-                  },
-                  lastMessageAt: new Date().toISOString(),
-                  unreadCount:
-                    selectedConversationId === conv.id
-                      ? conv.unreadCount
-                      : conv.unreadCount + 1,
-                }
-              : conv
-          );
-
-          const foundConversation = updated.find(
-            (conv) => conv.id === data.conversation.id
-          );
-          if (foundConversation) {
-            console.log(
-              `✅ ConversationsList: Updated conversation ${data.conversation.id} with new message`
-            );
-          } else {
-            console.log(
-              `⚠️ ConversationsList: Conversation ${data.conversation.id} not found in list`
-            );
-          }
-
-          // Sort conversations by lastMessageAt (most recent first)
-          return updated.sort(
-            (a, b) =>
-              new Date(b.lastMessageAt).getTime() -
-              new Date(a.lastMessageAt).getTime()
-          );
-        });
-      }
-    );
-
-    // Listen for conversation read events from other clients
-    socket.on(
-      "conversation:read",
-      (data: { conversationId: string; timestamp: string }) => {
-        console.log("📥 Received conversation:read event:", data);
-        setConversations((prev) =>
-          prev.map((conv) =>
-            conv.id === data.conversationId ? { ...conv, unreadCount: 0 } : conv
-          )
-        );
-      }
-    );
-
-    // Listen for real-time updates from ConversationView
-    socket.on(
-      "conversation:view-update",
-      (data: {
-        conversationId: string;
-        type: "new_message" | "message_sent" | "bot_status_changed" | "typing_start" | "typing_stop";
-        message?: { text: string; role: "USER" | "AGENT" | "BOT"; createdAt: string };
-        lastMessageAt?: string;
-        autoBot?: boolean;
-        timestamp: string;
-      }) => {
-        console.log("📥 ConversationsList: Received conversation:view-update event:", data);
-        
-        try {
-        
-        setConversations((prev) => {
-          const updated = prev.map((conv) => {
-            if (conv.id !== data.conversationId) return conv;
-            
-            let updatedConv = { ...conv };
-            
-            switch (data.type) {
-              case "new_message":
-              case "message_sent":
-                if (data.message && data.lastMessageAt) {
-                  updatedConv = {
-                    ...conv,
-                    lastMessage: {
-                      text: data.message.text,
-                      role: data.message.role,
-                    },
-                    lastMessageAt: data.lastMessageAt,
-                    // Only increment unread count for non-agent messages when conversation is not selected
-                    unreadCount: 
-                      data.message.role !== "AGENT" && selectedConversationId !== conv.id
-                        ? conv.unreadCount + 1
-                        : conv.unreadCount,
-                  };
-                }
-                break;
-                
-              case "bot_status_changed":
-                if (data.autoBot !== undefined) {
-                  updatedConv = {
-                    ...conv,
-                    autoBot: data.autoBot,
-                  };
-                }
-                break;
-                
-              case "typing_start":
-                console.log(`💬 User is typing in conversation ${data.conversationId}`);
-                setTypingConversations(prev => new Set(prev.add(data.conversationId)));
-                updatedConv = { ...conv, isTyping: true };
-                
-                // Clear any existing timeout for this conversation
-                setTypingTimeouts(prev => {
-                  const existingTimeout = prev.get(data.conversationId);
-                  if (existingTimeout) {
-                    clearTimeout(existingTimeout);
-                  }
-                  
-                  // Set new timeout to auto-clear typing indicator after 10 seconds
-                  const newTimeout = setTimeout(() => {
-                    console.log(`⏰ Typing timeout for conversation ${data.conversationId}`);
-                    setTypingConversations(typing => {
-                      const newSet = new Set(typing);
-                      newSet.delete(data.conversationId);
-                      return newSet;
-                    });
-                    setConversations(convs => 
-                      convs.map(c => 
-                        c.id === data.conversationId ? { ...c, isTyping: false } : c
-                      )
-                    );
-                  }, 10000);
-                  
-                  const newMap = new Map(prev);
-                  newMap.set(data.conversationId, newTimeout);
-                  return newMap;
-                });
-                break;
-                
-              case "typing_stop":
-                console.log(`✋ User stopped typing in conversation ${data.conversationId}`);
-                setTypingConversations(prev => {
-                  const newSet = new Set(prev);
-                  newSet.delete(data.conversationId);
-                  return newSet;
-                });
-                
-                // Clear timeout for this conversation
-                setTypingTimeouts(prev => {
-                  const existingTimeout = prev.get(data.conversationId);
-                  if (existingTimeout) {
-                    clearTimeout(existingTimeout);
-                  }
-                  const newMap = new Map(prev);
-                  newMap.delete(data.conversationId);
-                  return newMap;
-                });
-                
-                updatedConv = { ...conv, isTyping: false };
-                break;
-            }
-            
-            return updatedConv;
-          });
-          
-          // Sort conversations by lastMessageAt (most recent first) for message events
-          if (data.type === "new_message" || data.type === "message_sent") {
-            const sorted = updated.sort(
-              (a, b) =>
-                new Date(b.lastMessageAt).getTime() -
-                new Date(a.lastMessageAt).getTime()
-            );
-            console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (socket)`);
-            
-            // Update status indicators
-            setLastUpdateTime(new Date().toLocaleTimeString());
-            setUpdateSource(`Socket: ${data.type}`);
-            
-            return sorted;
-          }
-          
-          console.log(`✅ ConversationsList: Successfully processed ${data.type} for conversation ${data.conversationId} (socket)`);
-          
-          // Update status indicators
-          setLastUpdateTime(new Date().toLocaleTimeString());
-          setUpdateSource(`Socket: ${data.type}`);
-          
-          return updated;
-        });
-        } catch (err) {
-          console.error("Error processing conversation:view-update event:", err, data);
-          // Fallback: Try to refresh the conversation list if socket update fails
-          if (data.type === "new_message" || data.type === "message_sent") {
-            console.log("🔄 ConversationsList: Falling back to refresh conversation list");
-            fetchConversations();
-          }
-        }
-      }
-    );
-
-    return () => {
-      console.log("🔌 Cleaning up socket event listeners");
-      socket.off("conversation:new");
-      socket.off("conversation:updated");
-      socket.off("message:new");
-      socket.off("conversation:read");
-      socket.off("conversation:view-update");
-    };
-  }, [socket, selectedConversationId]);
-
-  // Cleanup typing timeouts on unmount
-  useEffect(() => {
-    return () => {
-      typingTimeouts.forEach((timeout) => clearTimeout(timeout));
-    };
-  }, []);
-
-  const fetchConversations = async () => {
+  const fetchConversations = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
+      
       const response = await fetch("/api/conversations");
 
       if (!response.ok) {
@@ -512,16 +120,73 @@ const ConversationsList = forwardRef<
       }
 
       const data = await response.json();
-      const sortedConversations = (data.conversations || []).sort(
+      const newConversations = (data.conversations || []).sort(
         (a: ConversationSummary, b: ConversationSummary) =>
           new Date(b.lastMessageAt).getTime() -
           new Date(a.lastMessageAt).getTime()
       );
-      setConversations(sortedConversations);
+      
+      // Check for changes if this is a polling update
+      if (silent) {
+        setConversations(prevConversations => {
+          // Calculate previous and new unread counts
+          const prevTotalUnread = prevConversations.reduce((sum: number, conv: ConversationSummary) => sum + conv.unreadCount, 0);
+          const newTotalUnread = newConversations.reduce((sum: number, conv: ConversationSummary) => sum + conv.unreadCount, 0);
+          
+          // Simple comparison to detect changes
+          const hasChanges = JSON.stringify(prevConversations) !== JSON.stringify(newConversations);
+          
+          if (hasChanges) {
+            console.log("✨ Detected conversation changes, updating list");
+            setLastUpdateTime(new Date());
+            
+            // Check if there are new unread messages
+            if (newTotalUnread > prevTotalUnread) {
+              const newUnreadMessages = newTotalUnread - prevTotalUnread;
+              console.log(`🔔 New unread messages detected: ${newUnreadMessages}`);
+              
+              // Show notification
+              const message = newUnreadMessages === 1 ? "1 new message" : `${newUnreadMessages} new messages`;
+              setNewMessageNotification(message);
+              
+              // Clear notification after 5 seconds
+              setTimeout(() => {
+                setNewMessageNotification(null);
+              }, 5000);
+              
+              // Browser notification if supported and permission granted
+              if ("Notification" in window && Notification.permission === "granted") {
+                new Notification("Facebook Bot Dashboard", {
+                  body: `You have ${message}`,
+                  icon: "/favicon.ico",
+                  tag: "new-message"
+                });
+              }
+            }
+            
+            setTotalUnreadCount(newTotalUnread);
+            return newConversations;
+          } else {
+            console.log("💬 No changes detected");
+            return prevConversations;
+          }
+        });
+      } else {
+        setConversations(newConversations);
+        setLastUpdateTime(new Date());
+        const newTotalUnread = newConversations.reduce((sum: number, conv: ConversationSummary) => sum + conv.unreadCount, 0);
+        setTotalUnreadCount(newTotalUnread);
+      }
     } catch (error) {
       console.error("Error fetching conversations:", error);
+      // Don't show loading error for silent updates
+      if (!silent) {
+        // Could show error message to user here
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -641,28 +306,34 @@ const ConversationsList = forwardRef<
   }
 
   return (
-    <Card className="h-[600px] flex flex-col">
-      <CardHeader className="flex-shrink-0">
-        <div className="flex items-center justify-between">
+    <div className="relative">
+      {/* New message notification */}
+      {newMessageNotification && (
+        <div 
+          className="absolute top-0 left-0 right-0 bg-blue-500 text-white px-4 py-2 text-sm font-medium text-center z-10 rounded-t-lg animate-in slide-in-from-top duration-300 cursor-pointer hover:bg-blue-600 transition-colors"
+          onClick={() => setNewMessageNotification(null)}
+          title="Click to dismiss"
+        >
+          🔔 {newMessageNotification}
+          <span className="ml-2 text-xs opacity-75">×</span>
+        </div>
+      )}
+      
+      <Card className={`h-[600px] flex flex-col ${newMessageNotification ? 'mt-10' : ''} transition-all duration-300`}>
+        <CardHeader className="flex-shrink-0">
+          <div className="flex items-center justify-between">
           <CardTitle className="flex items-center space-x-2">
             <MessageSquare className="h-5 w-5" />
             <span>Conversations</span>
+            {totalUnreadCount > 0 && (
+              <span className="bg-red-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] text-center">
+                {totalUnreadCount}
+              </span>
+            )}
           </CardTitle>
-          <div className="flex items-center space-x-2">
-            <Badge variant={isConnected ? "default" : "destructive"}>
-              {isConnected ? "Live" : "Offline"}
-            </Badge>
-            {lastUpdateTime && (
-              <Badge variant="outline" className="text-xs">
-                Last: {lastUpdateTime}
-              </Badge>
-            )}
-            {updateSource && (
-              <Badge variant="secondary" className="text-xs">
-                {updateSource}
-              </Badge>
-            )}
-          </div>
+          <Badge variant={isConnected ? "default" : "destructive"}>
+            {isConnected ? "Live" : "Offline"}
+          </Badge>
         </div>
 
         {/* Search */}
@@ -695,112 +366,6 @@ const ConversationsList = forwardRef<
             </Button>
           ))}
 
-          {/* Test Buttons for debugging */}
-          {process.env.NODE_ENV === "development" && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  console.log("🧪 Test: Testing direct communication");
-                  if (conversations.length > 0) {
-                    const testConversationId = conversations[0].id;
-                    
-                    // Test direct update via handleViewUpdate
-                    const testUpdateData = {
-                      conversationId: testConversationId,
-                      type: "new_message" as const,
-                      message: {
-                        text: `Test message at ${new Date().toLocaleTimeString()}`,
-                        role: "USER" as const,
-                        createdAt: new Date().toISOString(),
-                      },
-                      lastMessageAt: new Date().toISOString(),
-                      timestamp: new Date().toISOString(),
-                    };
-
-                    console.log(
-                      "🧪 Test: Calling handleViewUpdate directly with:",
-                      testUpdateData
-                    );
-                    
-                    // Test the direct communication
-                    handleViewUpdate(testUpdateData);
-                  } else {
-                    console.log("🧪 Test: No conversations available");
-                  }
-                }}
-              >
-                Test Direct
-              </Button>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  console.log("🧪 Test: Testing socket communication");
-                  if (socket && conversations.length > 0) {
-                    const testConversationId = conversations[0].id;
-                    
-                    const testSocketData = {
-                      conversationId: testConversationId,
-                      type: "new_message" as const,
-                      message: {
-                        text: `Socket test message at ${new Date().toLocaleTimeString()}`,
-                        role: "AGENT" as const,
-                        createdAt: new Date().toISOString(),
-                      },
-                      lastMessageAt: new Date().toISOString(),
-                      timestamp: new Date().toISOString(),
-                    };
-
-                    console.log(
-                      "🧪 Test: Emitting conversation:view-update via socket with:",
-                      testSocketData
-                    );
-                    
-                    // Test socket communication
-                    socket.emit("conversation:view-update", testSocketData);
-                  } else {
-                    console.log("🧪 Test: No socket or conversations available");
-                  }
-                }}
-              >
-                Test Socket
-              </Button>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  console.log("🧪 Test: Simulating typing indicators");
-                  if (socket && conversations.length > 0) {
-                    const testConversationId = conversations[0].id;
-                    
-                    // Test typing start
-                    socket.emit("conversation:view-update", {
-                      conversationId: testConversationId,
-                      type: "typing_start",
-                      timestamp: new Date().toISOString(),
-                    });
-                    
-                    // Test typing stop after 3 seconds
-                    setTimeout(() => {
-                      socket.emit("conversation:view-update", {
-                        conversationId: testConversationId,
-                        type: "typing_stop",
-                        timestamp: new Date().toISOString(),
-                      });
-                    }, 3000);
-                  } else {
-                    console.log("🧪 Test: No socket or conversations available");
-                  }
-                }}
-              >
-                Test Typing
-              </Button>
-            </>
-          )}
         </div>
       </CardHeader>
 
@@ -919,9 +484,6 @@ const ConversationsList = forwardRef<
         </div>
       </CardContent>
     </Card>
+    </div>
   );
-});
-
-ConversationsList.displayName = "ConversationsList";
-
-export default ConversationsList;
+}
