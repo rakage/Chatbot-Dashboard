@@ -137,7 +137,7 @@ export default function ConversationView({
     // Join conversation room
     joinConversation(conversationId);
 
-    // Listen for new messages
+  // Listen for new messages
     socket.on(
       "message:new",
       (data: { message: Message; conversation: any }) => {
@@ -177,6 +177,22 @@ export default function ConversationView({
             setConversation((prev) =>
               prev ? { ...prev, ...data.conversation } : null
             );
+          }
+
+          // Emit real-time update to ConversationsList
+          console.log(
+            `🔄 ConversationView: Emitting conversation:view-update for message ${data.message.id}`
+          );
+          try {
+            socket.emit("conversation:view-update", {
+              conversationId,
+              type: "new_message",
+              message: data.message,
+              lastMessageAt: data.message.createdAt,
+              timestamp: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.warn("Failed to emit conversation:view-update for new message:", err);
           }
         } else {
           console.log(
@@ -330,6 +346,23 @@ export default function ConversationView({
           newAutoBotStatus ? "enabled" : "disabled"
         } for conversation ${conversation.id}`
       );
+
+      // Emit real-time update to ConversationsList for bot status change
+      if (socket) {
+        console.log(
+          `🔄 ConversationView: Emitting conversation:view-update for bot status change`
+        );
+        try {
+          socket.emit("conversation:view-update", {
+            conversationId: conversation.id,
+            type: "bot_status_changed",
+            autoBot: newAutoBotStatus,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn("Failed to emit conversation:view-update for bot status change:", err);
+        }
+      }
     } catch (error) {
       console.error("Failed to update bot settings:", error);
       // Revert optimistic update
@@ -390,10 +423,41 @@ export default function ConversationView({
         `✅ Updated optimistic message ${optimisticMessage.id} with real message ${data.message.id}`
       );
 
+      // Emit real-time update to ConversationsList for sent message
+      if (socket) {
+        console.log(
+          `🔄 ConversationView: Emitting conversation:view-update for sent message ${data.message.id}`
+        );
+        try {
+          socket.emit("conversation:view-update", {
+            conversationId,
+            type: "message_sent",
+            message: data.message,
+            lastMessageAt: data.message.createdAt,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn("Failed to emit conversation:view-update for sent message:", err);
+        }
+      }
+
       // Stop typing indicator
       if (isTyping) {
         setIsTyping(false);
         sendTyping(conversationId, false);
+        
+        // Emit typing stop to ConversationsList
+        if (socket) {
+          try {
+            socket.emit("conversation:view-update", {
+              conversationId,
+              type: "typing_stop",
+              timestamp: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.warn("Failed to emit typing_stop on message send:", err);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to send message:", err);
@@ -417,6 +481,19 @@ export default function ConversationView({
     if (!isTyping && value.trim()) {
       setIsTyping(true);
       sendTyping(conversationId, true);
+      
+      // Emit typing status to ConversationsList
+      if (socket) {
+        try {
+          socket.emit("conversation:view-update", {
+            conversationId,
+            type: "typing_start",
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn("Failed to emit typing_start:", err);
+        }
+      }
     }
 
     // Set timeout to stop typing
@@ -424,6 +501,19 @@ export default function ConversationView({
       if (isTyping) {
         setIsTyping(false);
         sendTyping(conversationId, false);
+        
+        // Emit typing stop to ConversationsList
+        if (socket) {
+          try {
+            socket.emit("conversation:view-update", {
+              conversationId,
+              type: "typing_stop",
+              timestamp: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.warn("Failed to emit typing_stop:", err);
+          }
+        }
       }
     }, 3000);
   };
