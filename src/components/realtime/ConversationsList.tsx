@@ -45,6 +45,15 @@ export default function ConversationsList({
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"ALL" | "OPEN" | "UNREAD">("ALL");
 
+  // Debug socket connection status
+  useEffect(() => {
+    console.log("🔌 ConversationsList: Socket connection status changed:", {
+      isConnected,
+      socketExists: !!socket,
+      socketId: socket?.id,
+    });
+  }, [socket, isConnected]);
+
   // Fetch conversations
   useEffect(() => {
     fetchConversations();
@@ -52,9 +61,14 @@ export default function ConversationsList({
 
   // Socket event handlers
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      console.log("❌ ConversationsList: No socket available");
+      return;
+    }
 
-    console.log("🔌 Setting up socket event listeners for conversations");
+    console.log("🔌 ConversationsList: Setting up socket event listeners");
+    console.log("🔌 ConversationsList: Socket connected:", socket.connected);
+    console.log("🔌 ConversationsList: Socket ID:", socket.id);
 
     // Listen for new conversations
     socket.on(
@@ -346,6 +360,61 @@ export default function ConversationsList({
                 )}
             </Button>
           ))}
+
+          {/* Test Button for debugging */}
+          {process.env.NODE_ENV === "development" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                console.log("🧪 Test: Emitting test message event");
+                if (socket && conversations.length > 0) {
+                  const testData = {
+                    message: {
+                      id: "test-" + Date.now(),
+                      text: "Test message from browser",
+                      role: "USER" as const,
+                      createdAt: new Date().toISOString(),
+                    },
+                    conversation: {
+                      id: conversations[0].id,
+                      psid: conversations[0].psid,
+                      status: conversations[0].status,
+                      autoBot: conversations[0].autoBot,
+                    },
+                  };
+
+                  // Manually trigger the event handler to test if UI updates work
+                  console.log(
+                    "🧪 Test: Triggering message:new handler with:",
+                    testData
+                  );
+                  socket.emit("test:message", testData);
+
+                  // Also test direct state update
+                  setConversations((prev) =>
+                    prev.map((conv) =>
+                      conv.id === testData.conversation.id
+                        ? {
+                            ...conv,
+                            lastMessage: {
+                              text: testData.message.text,
+                              role: testData.message.role,
+                            },
+                            lastMessageAt: new Date().toISOString(),
+                            unreadCount: conv.unreadCount + 1,
+                          }
+                        : conv
+                    )
+                  );
+                } else {
+                  console.log("🧪 Test: No socket or conversations available");
+                }
+              }}
+            >
+              Test Update
+            </Button>
+          )}
         </div>
       </CardHeader>
 
