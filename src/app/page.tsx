@@ -19,7 +19,7 @@ export default function Home() {
     <div className="min-h-screen bg-white flex items-center justify-center">
       <div className="text-center">
         <h1 className="text-6xl font-bold text-black mb-8">
-          Salsation AI Agent
+          Salsation AI Chatbot
         </h1>
         <Link
           href="/auth/login"
