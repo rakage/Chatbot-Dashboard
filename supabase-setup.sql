@@ -118,3 +118,92 @@ GRANT EXECUTE ON FUNCTION match_documents TO authenticated;
 GRANT EXECUTE ON FUNCTION match_documents TO service_role;
 GRANT EXECUTE ON FUNCTION delete_company_documents TO service_role;
 GRANT EXECUTE ON FUNCTION delete_document_embeddings TO service_role;
+
+-- Create the conversation_last_seen table for tracking user's last seen timestamps
+CREATE TABLE IF NOT EXISTS conversation_last_seen (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  
+  -- Ensure one record per user-conversation pair
+  UNIQUE(user_id, conversation_id)
+);
+
+-- Create indexes for efficient lookups
+CREATE INDEX IF NOT EXISTS conversation_last_seen_user_id_idx 
+ON conversation_last_seen USING btree (user_id);
+
+CREATE INDEX IF NOT EXISTS conversation_last_seen_conversation_id_idx 
+ON conversation_last_seen USING btree (conversation_id);
+
+CREATE INDEX IF NOT EXISTS conversation_last_seen_user_conversation_idx 
+ON conversation_last_seen USING btree (user_id, conversation_id);
+
+-- Create trigger for updating timestamps on conversation_last_seen
+CREATE TRIGGER update_conversation_last_seen_updated_at 
+    BEFORE UPDATE ON conversation_last_seen 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Function to get last seen timestamps for a user's conversations
+CREATE OR REPLACE FUNCTION get_user_last_seen(user_id_param text)
+RETURNS TABLE (
+  conversation_id text,
+  last_seen_at timestamp with time zone
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    conversation_last_seen.conversation_id,
+    conversation_last_seen.last_seen_at
+  FROM conversation_last_seen
+  WHERE conversation_last_seen.user_id = user_id_param;
+END;
+$$;
+
+-- Function to update last seen timestamp for a conversation
+CREATE OR REPLACE FUNCTION update_conversation_last_seen(
+  user_id_param text,
+  conversation_id_param text,
+  last_seen_at_param timestamp with time zone DEFAULT NOW()
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO conversation_last_seen (user_id, conversation_id, last_seen_at)
+  VALUES (user_id_param, conversation_id_param, last_seen_at_param)
+  ON CONFLICT (user_id, conversation_id) 
+  DO UPDATE SET 
+    last_seen_at = last_seen_at_param,
+    updated_at = NOW();
+END;
+$$;
+
+-- Row Level Security (RLS) policies for conversation_last_seen
+ALTER TABLE conversation_last_seen ENABLE ROW LEVEL SECURITY;
+
+-- Policy for service role (full access)
+CREATE POLICY "Service role can do everything on last_seen" ON conversation_last_seen
+FOR ALL USING (auth.role() = 'service_role');
+
+-- Policy for anon/authenticated users (allow all operations since we're using custom auth)
+-- This is safe because we're controlling access at the application level with NextAuth
+DROP POLICY IF EXISTS "Allow all operations for anon and authenticated" ON conversation_last_seen;
+CREATE POLICY "Allow all operations for anon and authenticated" ON conversation_last_seen
+FOR ALL TO anon, authenticated
+USING (true)
+WITH CHECK (true);
+
+-- Grant permissions for conversation_last_seen
+GRANT ALL ON conversation_last_seen TO service_role;
+GRANT SELECT, INSERT, UPDATE ON conversation_last_seen TO authenticated;
+GRANT EXECUTE ON FUNCTION get_user_last_seen TO authenticated;
+GRANT EXECUTE ON FUNCTION get_user_last_seen TO service_role;
+GRANT EXECUTE ON FUNCTION update_conversation_last_seen TO authenticated;
+GRANT EXECUTE ON FUNCTION update_conversation_last_seen TO service_role;
