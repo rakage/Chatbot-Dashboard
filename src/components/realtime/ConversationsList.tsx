@@ -101,6 +101,48 @@ export default function ConversationsList({
     console.log("✅ Manual refresh completed");
   };
 
+  // Recompute unread state whenever lastSeenMap changes to avoid stale UI when navigating back
+  useEffect(() => {
+    if (conversations.length === 0) return;
+
+    const updatedNewlyUnread = new Set<string>();
+    let updatedTotalUnread = 0;
+    let changed = false;
+
+    const updatedConversations = conversations.map((conv) => {
+      const lastMessageTime = new Date(conv.lastMessageAt);
+      const lastSeenTime = lastSeenMap.get(conv.id);
+      const isUnread = !lastSeenTime || lastMessageTime > lastSeenTime;
+
+      if (isUnread) {
+        updatedNewlyUnread.add(conv.id);
+        updatedTotalUnread += conv.unreadCount;
+        return conv;
+      } else {
+        // If server still says unread but lastSeen shows it's read, fix locally
+        if (conv.unreadCount !== 0) changed = true;
+        return conv.unreadCount === 0 ? conv : { ...conv, unreadCount: 0 };
+      }
+    });
+
+    // Only update conversations if something changed to avoid unnecessary renders
+    if (changed) {
+      setConversations(updatedConversations);
+    }
+
+    setNewlyUnreadConversations(updatedNewlyUnread);
+    setHasNewUnreadMessages(updatedNewlyUnread.size > 0);
+
+    // Recompute total unread count from updated conversations
+    if (changed) {
+      updatedTotalUnread = updatedConversations.reduce((sum, c) => sum + c.unreadCount, 0);
+    } else {
+      updatedTotalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+    }
+    setTotalUnreadCount(updatedTotalUnread);
+
+  }, [lastSeenMap]);
+
   // Polling mechanism for real-time updates
   useEffect(() => {
     let interval: NodeJS.Timeout;
