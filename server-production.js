@@ -5,7 +5,7 @@ const next = require("next");
 // Force production mode
 const dev = false;
 const hostname = "localhost";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3001", 10);
 
 // Set NODE_ENV to production
 process.env.NODE_ENV = "production";
@@ -30,7 +30,7 @@ app.prepare().then(async () => {
     const { Server: SocketIOServer } = require("socket.io");
     const io = new SocketIOServer(server, {
       cors: {
-        origin: process.env.NEXTAUTH_URL || "http://localhost:3000",
+        origin: process.env.NEXTAUTH_URL || "http://localhost:3001",
         methods: ["GET", "POST"],
         credentials: true,
       },
@@ -78,7 +78,7 @@ app.prepare().then(async () => {
     setTimeout(async () => {
       try {
         const response = await fetch(
-          "http://localhost:3000/api/realtime/init",
+          "http://localhost:3001/api/realtime/init",
           {
             method: "POST",
           }

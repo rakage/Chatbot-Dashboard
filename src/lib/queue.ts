@@ -572,8 +572,8 @@ export async function initializeWorkers() {
                 // Use the same API endpoint as the Playground for consistency
                 const ragApiResponse = await fetch(
                   `${
-                    process.env.NEXTAUTH_URL || "http://localhost:3000"
-                  }/api/rag/chat`,
+                    process.env.NEXTAUTH_URL || "http://localhost:3001"
+                  }/api/rag/chat",
                   {
                     method: "POST",
                     headers: {

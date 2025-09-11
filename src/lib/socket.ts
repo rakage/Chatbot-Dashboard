@@ -17,7 +17,7 @@ class SocketService {
   init(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.NEXTAUTH_URL || "http://localhost:3000",
+        origin: process.env.NEXTAUTH_URL || "http://localhost:3001",
         methods: ["GET", "POST"],
         credentials: true,
       },
