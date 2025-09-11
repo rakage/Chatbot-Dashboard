@@ -105,6 +105,15 @@ export default function ConversationsList({
   useEffect(() => {
     if (conversations.length === 0) return;
 
+    console.log("🔄 Recomputing unread state based on lastSeenMap", {
+      conversationCount: conversations.length,
+      lastSeenMapSize: lastSeenMap.size,
+      lastSeenEntries: Array.from(lastSeenMap.entries()).map(([id, date]) => ({
+        conversationId: id,
+        lastSeenAt: date.toISOString()
+      }))
+    });
+
     const updatedNewlyUnread = new Set<string>();
     let updatedTotalUnread = 0;
     let changed = false;
@@ -114,15 +123,32 @@ export default function ConversationsList({
       const lastSeenTime = lastSeenMap.get(conv.id);
       const isUnread = !lastSeenTime || lastMessageTime > lastSeenTime;
 
+      console.log(`🔍 Frontend unread check for ${conv.id}:`, {
+        lastMessageAt: conv.lastMessageAt,
+        lastSeenTime: lastSeenTime?.toISOString() || 'never',
+        currentUnreadCount: conv.unreadCount,
+        calculatedIsUnread: isUnread,
+        serverSaysUnread: conv.unreadCount > 0
+      });
+
       if (isUnread) {
         updatedNewlyUnread.add(conv.id);
         updatedTotalUnread += conv.unreadCount;
         return conv;
       } else {
         // If server still says unread but lastSeen shows it's read, fix locally
-        if (conv.unreadCount !== 0) changed = true;
+        if (conv.unreadCount !== 0) {
+          console.log(`✅ Fixing conversation ${conv.id}: server says unread but lastSeen shows it's read`);
+          changed = true;
+        }
         return conv.unreadCount === 0 ? conv : { ...conv, unreadCount: 0 };
       }
+    });
+
+    console.log("📊 Unread state recomputation result:", {
+      changed,
+      newlyUnreadCount: updatedNewlyUnread.size,
+      conversationsToFix: updatedConversations.filter(c => conversations.find(orig => orig.id === c.id && orig.unreadCount !== c.unreadCount))
     });
 
     // Only update conversations if something changed to avoid unnecessary renders
@@ -141,7 +167,7 @@ export default function ConversationsList({
     }
     setTotalUnreadCount(updatedTotalUnread);
 
-  }, [lastSeenMap]);
+  }, [lastSeenMap, conversations]);
 
   // Polling mechanism for real-time updates
   useEffect(() => {
@@ -407,23 +433,31 @@ export default function ConversationsList({
     const messageAfterSeen = messageTimestamp > seenTimestamp;
     const serverUnread = conversation.unreadCount > 0;
     
-    const isUnread = noLastSeen || messageAfterSeen || serverUnread;
+    // Prioritize timestamp-based logic: if we have lastSeen data, use it
+    // Only fall back to server unread count if we don't have timestamp data
+    let isUnread;
+    if (lastSeenTime) {
+      // We have timestamp data - use it (ignore server unread count)
+      isUnread = messageAfterSeen;
+    } else {
+      // No timestamp data - fall back to server unread count
+      isUnread = serverUnread;
+    }
     
     // Debug logging for troubleshooting
-    if (conversation.id && (isUnread || serverUnread)) {
-      console.log(`🔍 Unread check for ${conversation.id}:`, {
-        lastMessageAt: conversation.lastMessageAt,
-        lastMessageTime: lastMessageTime.toISOString(),
-        lastSeenTime: lastSeenTime?.toISOString() || 'never',
-        messageTimestamp,
-        seenTimestamp,
-        noLastSeen,
-        messageAfterSeen,
-        serverUnread,
-        timeDiffMs: messageTimestamp - seenTimestamp,
-        finalResult: isUnread
-      });
-    }
+    console.log(`🔍 Unread check for ${conversation.id}:`, {
+      lastMessageAt: conversation.lastMessageAt,
+      lastMessageTime: lastMessageTime.toISOString(),
+      lastSeenTime: lastSeenTime?.toISOString() || 'never',
+      messageTimestamp,
+      seenTimestamp,
+      noLastSeen,
+      messageAfterSeen,
+      serverUnread,
+      timeDiffMs: messageTimestamp - seenTimestamp,
+      usingTimestampLogic: !!lastSeenTime,
+      finalResult: isUnread
+    });
     
     return isUnread;
   };
