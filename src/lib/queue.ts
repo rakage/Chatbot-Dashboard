@@ -57,7 +57,7 @@ export async function getIncomingMessageQueue(): Promise<Queue> {
 
     // Auto-initialize workers when queue is first accessed
     if (!workersInitialized) {
-      console.log("🔄 Auto-initializing queue workers...");
+      console.log("Auto-initializing queue workers...");
       await initializeWorkers();
       workersInitialized = true;
     }
@@ -130,7 +130,7 @@ let outgoingMessageWorkerInstance: Worker | null = null;
 
 export async function initializeWorkers() {
   if (workersInitialized) {
-    console.log("✅ Workers already initialized, skipping...");
+    console.log("Workers already initialized, skipping...");
     return;
   }
 
@@ -140,9 +140,9 @@ export async function initializeWorkers() {
     // Test Redis connection first
     try {
       await redisConnection.ping();
-      console.log("✅ Redis connection successful");
+      console.log("Redis connection successful");
     } catch (error) {
-      console.error("❌ Redis connection failed:", error);
+      console.error("Redis connection failed:", error);
       throw new Error(
         `Redis connection failed: ${
           error instanceof Error ? error.message : String(error)
@@ -158,7 +158,7 @@ export async function initializeWorkers() {
 
           try {
             console.log(
-              `🔍 Processing message for pageId: ${pageId}, senderId: ${senderId}`
+              `Processing message for pageId: ${pageId}, senderId: ${senderId}`
             );
 
             // Find page connection by Facebook pageId
@@ -168,14 +168,14 @@ export async function initializeWorkers() {
 
             if (!pageConnection) {
               console.error(
-                `❌ Page connection not found for Facebook pageId: ${pageId}`
+                `Page connection not found for Facebook pageId: ${pageId}`
               );
               throw new Error(
                 `Page connection not found for Facebook pageId: ${pageId}`
               );
             }
 
-            console.log(`✅ Page connection found:`, {
+            console.log(`Page connection found:`, {
               dbId: pageConnection.id,
               facebookPageId: pageConnection.pageId,
               pageName: pageConnection.pageName,
@@ -193,13 +193,13 @@ export async function initializeWorkers() {
 
             if (!conversation) {
               console.log(
-                `📝 Creating new conversation for database pageId: ${pageConnection.id}, senderId: ${senderId}`
+                `Creating new conversation for database pageId: ${pageConnection.id}, senderId: ${senderId}`
               );
 
               // Fetch customer profile from Facebook before creating conversation
               let customerProfile = null;
               try {
-                console.log(`🔍 Fetching customer profile for ${senderId}...`);
+                console.log(`Fetching customer profile for ${senderId}...`);
                 const pageAccessToken = await decrypt(
                   pageConnection.pageAccessTokenEnc
                 );
@@ -221,10 +221,10 @@ export async function initializeWorkers() {
                   cached: true,
                   cachedAt: new Date().toISOString(),
                 };
-                console.log(`✅ Customer profile fetched:`, customerProfile);
+                console.log(`Customer profile fetched:`, customerProfile);
               } catch (profileError) {
                 console.error(
-                  `❌ Failed to fetch customer profile for ${senderId}:`,
+                  `Failed to fetch customer profile for ${senderId}:`,
                   profileError
                 );
                 // Continue with conversation creation even if profile fetch fails
@@ -242,7 +242,7 @@ export async function initializeWorkers() {
                 },
               });
               console.log(
-                `✅ Conversation created with ID: ${conversation.id}`
+                `Conversation created with ID: ${conversation.id}`
               );
 
               // Emit new conversation event to company room
@@ -267,7 +267,7 @@ export async function initializeWorkers() {
                   }
                 );
                 console.log(
-                  `✅ Emitted conversation:new event for conversation ${conversation.id} to company ${pageConnection.companyId}`
+                  `Emitted conversation:new event for conversation ${conversation.id} to company ${pageConnection.companyId}`
                 );
 
                 // Also emit to development company room
@@ -292,18 +292,18 @@ export async function initializeWorkers() {
                     }
                   );
                   console.log(
-                    `✅ Emitted conversation:new event to dev-company room`
+                    `Emitted conversation:new event to dev-company room`
                   );
                 }
               } catch (emitError) {
                 console.error(
-                  "❌ Failed to emit conversation:new event:",
+                  "Failed to emit conversation:new event:",
                   emitError
                 );
               }
             } else {
               console.log(
-                `✅ Existing conversation found with ID: ${conversation.id}`
+                `Existing conversation found with ID: ${conversation.id}`
               );
             }
 
@@ -323,7 +323,7 @@ export async function initializeWorkers() {
             let message;
             if (existingMessage) {
               console.log(
-                `⚠️ Duplicate user message detected, using existing message ID: ${existingMessage.id}`
+                `Duplicate user message detected, using existing message ID: ${existingMessage.id}`
               );
               message = existingMessage;
             } else {
@@ -384,7 +384,7 @@ export async function initializeWorkers() {
                 };
 
                 console.log(
-                  `📡 Emitting message:new to conversation:${conversation.id}`,
+                  `Emitting message:new to conversation:${conversation.id}`,
                   messageEvent
                 );
                 socketService.emitToConversation(
@@ -466,7 +466,7 @@ export async function initializeWorkers() {
         "bot-reply",
         async (job: Job<BotReplyJobData>) => {
           console.log(
-            `🚀 Bot-reply worker started for conversation: ${job.data.conversationId}`
+            `Bot-reply worker started for conversation: ${job.data.conversationId}`
           );
           const { conversationId } = job.data;
 
@@ -521,17 +521,17 @@ export async function initializeWorkers() {
             }
 
             console.log(
-              `🤖 Generating bot response with provider: ${providerConfig.provider}, model: ${providerConfig.model}`
+              `Generating bot response with provider: ${providerConfig.provider}, model: ${providerConfig.model}`
             );
             console.log(
-              `🤖 Provider type:`,
+              `Provider type:`,
               typeof providerConfig.provider,
               `Value:`,
               providerConfig.provider
             );
 
             // Use the Prisma Provider enum directly
-            console.log(`🤖 Using provider from DB:`, providerConfig.provider);
+            console.log(`Using provider from DB:`, providerConfig.provider);
 
             // Validate that it's a valid provider
             if (!Object.values(Provider).includes(providerConfig.provider)) {
@@ -542,7 +542,7 @@ export async function initializeWorkers() {
               );
             }
 
-            console.log(`🤖 Validated provider:`, providerConfig.provider);
+            console.log(`Validated provider:`, providerConfig.provider);
 
             // Get the latest user message for RAG search
             const latestUserMessage = messageHistory
@@ -550,14 +550,14 @@ export async function initializeWorkers() {
               .pop();
 
             console.log(
-              `🔍 Debug: messageHistory length: ${messageHistory.length}`
+              `Debug: messageHistory length: ${messageHistory.length}`
             );
             console.log(
-              `🔍 Debug: latestUserMessage found: ${!!latestUserMessage}`
+              `Debug: latestUserMessage found: ${!!latestUserMessage}`
             );
             if (latestUserMessage) {
               console.log(
-                `🔍 Debug: latestUserMessage content: "${latestUserMessage.content}"`
+                `Debug: latestUserMessage content: "${latestUserMessage.content}"`
               );
             }
 
@@ -565,7 +565,7 @@ export async function initializeWorkers() {
 
             if (latestUserMessage) {
               console.log(
-                `🔍 Using Playground RAG API for Facebook bot response to: "${latestUserMessage.content}"`
+                `Using Playground RAG API for Facebook bot response to: "${latestUserMessage.content}"`
               );
 
               try {
@@ -573,7 +573,7 @@ export async function initializeWorkers() {
                 const ragApiResponse = await fetch(
                   `${
                     process.env.NEXTAUTH_URL || "http://localhost:3001"
-                  }/api/rag/chat",
+                  }/api/rag/chat`,
                   {
                     method: "POST",
                     headers: {
@@ -581,7 +581,7 @@ export async function initializeWorkers() {
                     },
                     body: JSON.stringify({
                       message: latestUserMessage.content,
-                      conversationId: conversation.id, // ✅ Add conversation ID for memory!
+                      conversationId: conversation.id, // Add conversation ID for memory!
                       companyId: conversation.page.company.id,
                       internal: true, // Mark as internal call
                       settings: {
@@ -605,17 +605,13 @@ export async function initializeWorkers() {
                   };
 
                   console.log(
-                    `✅ Facebook RAG API Response: Generated ${
-                      ragData.message.length
-                    } chars with ${
-                      ragData.context?.relevantChunks || 0
-                    } relevant chunks`
+                    `Facebook RAG API Response: Generated ${ragData.message.length} chars with ${ragData.context?.relevantChunks || 0} relevant chunks`
                   );
 
                   // Log source documents for Facebook
                   if (ragData.context?.sourceDocuments?.length > 0) {
                     console.log(
-                      `📚 Facebook Sources: ${ragData.context.sourceDocuments.join(
+                      `Facebook Sources: ${ragData.context.sourceDocuments.join(
                         ", "
                       )}`
                     );
@@ -627,7 +623,7 @@ export async function initializeWorkers() {
                 }
               } catch (ragError) {
                 console.error(
-                  "❌ RAG API failed, falling back to standard LLM:",
+                  "RAG API failed, falling back to standard LLM:",
                   ragError
                 );
 
@@ -679,7 +675,7 @@ export async function initializeWorkers() {
             ) {
               // Within 5 seconds
               console.log(
-                `⚠️ Duplicate bot message detected, using existing message ID: ${existingBotMessage.id}`
+                `Duplicate bot message detected, using existing message ID: ${existingBotMessage.id}`
               );
               botMessage = existingBotMessage;
             } else {
@@ -719,7 +715,7 @@ export async function initializeWorkers() {
               };
 
               console.log(
-                `📡 Emitting bot message:new to conversation:${conversationId}`,
+                `Emitting bot message:new to conversation:${conversationId}`,
                 botMessageEvent
               );
 
@@ -762,7 +758,7 @@ export async function initializeWorkers() {
             });
 
             console.log(
-              `📤 Queued bot response to Facebook page ${conversation.page.pageId}, recipient ${conversation.psid}`
+              `Queued bot response to Facebook page ${conversation.page.pageId}, recipient ${conversation.psid}`
             );
 
             return { messageId: botMessage.id };
@@ -785,13 +781,13 @@ export async function initializeWorkers() {
           try {
             // Get page access token
             console.log(
-              `🔍 Looking up page connection for Facebook page ID: ${pageId}`
+              `Looking up page connection for Facebook page ID: ${pageId}`
             );
             const page = await db.pageConnection.findUnique({
               where: { pageId },
             });
 
-            console.log(`📄 Page connection found:`, !!page);
+            console.log(`Page connection found:`, !!page);
 
             if (!page) {
               throw new Error("Page connection not found");
@@ -871,7 +867,7 @@ export async function initializeWorkers() {
     }
 
     workersInitialized = true;
-    console.log("✅ Workers initialized successfully");
+    console.log("Workers initialized successfully");
   } catch (error) {
     console.error("Failed to initialize workers:", error);
   }
@@ -885,7 +881,7 @@ export async function processIncomingMessageDirect(
 
   try {
     console.log(
-      `🔍 Processing message directly for pageId: ${pageId}, senderId: ${senderId}`
+      `Processing message directly for pageId: ${pageId}, senderId: ${senderId}`
     );
 
     // Find page connection by Facebook pageId
@@ -895,14 +891,14 @@ export async function processIncomingMessageDirect(
 
     if (!pageConnection) {
       console.error(
-        `❌ Page connection not found for Facebook pageId: ${pageId}`
+        `Page connection not found for Facebook pageId: ${pageId}`
       );
       throw new Error(
         `Page connection not found for Facebook pageId: ${pageId}`
       );
     }
 
-    console.log(`✅ Page connection found:`, {
+    console.log(`Page connection found:`, {
       dbId: pageConnection.id,
       facebookPageId: pageConnection.pageId,
       pageName: pageConnection.pageName,
@@ -920,13 +916,13 @@ export async function processIncomingMessageDirect(
 
     if (!conversation) {
       console.log(
-        `📝 Creating new conversation for database pageId: ${pageConnection.id}, senderId: ${senderId}`
+        `Creating new conversation for database pageId: ${pageConnection.id}, senderId: ${senderId}`
       );
 
       // Fetch customer profile from Facebook before creating conversation
       let customerProfile = null;
       try {
-        console.log(`🔍 Fetching customer profile for ${senderId}...`);
+        console.log(`Fetching customer profile for ${senderId}...`);
         const pageAccessToken = await decrypt(
           pageConnection.pageAccessTokenEnc
         );
@@ -948,10 +944,10 @@ export async function processIncomingMessageDirect(
           cached: true,
           cachedAt: new Date().toISOString(),
         };
-        console.log(`✅ Customer profile fetched:`, customerProfile);
+        console.log(`Customer profile fetched:`, customerProfile);
       } catch (profileError) {
         console.error(
-          `❌ Failed to fetch customer profile for ${senderId}:`,
+          `Failed to fetch customer profile for ${senderId}:`,
           profileError
         );
         // Continue with conversation creation even if profile fetch fails
@@ -968,7 +964,7 @@ export async function processIncomingMessageDirect(
           meta: customerProfile ? { customerProfile } : undefined,
         },
       });
-      console.log(`✅ Conversation created with ID: ${conversation.id}`);
+      console.log(`Conversation created with ID: ${conversation.id}`);
 
       // Emit new conversation event to company room
       try {
@@ -991,7 +987,7 @@ export async function processIncomingMessageDirect(
           }
         );
         console.log(
-          `✅ Emitted conversation:new event for conversation ${conversation.id} to company ${pageConnection.companyId}`
+          `Emitted conversation:new event for conversation ${conversation.id} to company ${pageConnection.companyId}`
         );
 
         // Also emit to development company room
@@ -1010,13 +1006,13 @@ export async function processIncomingMessageDirect(
               unreadCount: 1,
             },
           });
-          console.log(`✅ Emitted conversation:new event to dev-company room`);
+          console.log(`Emitted conversation:new event to dev-company room`);
         }
       } catch (emitError) {
-        console.error("❌ Failed to emit conversation:new event:", emitError);
+        console.error("Failed to emit conversation:new event:", emitError);
       }
     } else {
-      console.log(`✅ Existing conversation found with ID: ${conversation.id}`);
+      console.log(`Existing conversation found with ID: ${conversation.id}`);
     }
 
     // Create message record
@@ -1033,7 +1029,7 @@ export async function processIncomingMessageDirect(
       },
     });
 
-    console.log(`✅ Message saved with ID: ${message.id}`);
+    console.log(`Message saved with ID: ${message.id}`);
 
     // Update conversation lastMessageAt
     await db.conversation.update({
@@ -1077,7 +1073,7 @@ export async function processIncomingMessageDirect(
         };
 
         console.log(
-          `📡 Emitting message:new to conversation:${conversation.id}`,
+          `Emitting message:new to conversation:${conversation.id}`,
           messageEvent
         );
         socketService.emitToConversation(
@@ -1125,12 +1121,12 @@ export async function processIncomingMessageDirect(
         }
       }
     } catch (emitError) {
-      console.error("❌ Failed to emit real-time events:", emitError);
+      console.error("Failed to emit real-time events:", emitError);
     }
 
     // Handle auto-bot response if enabled
     if (conversation.autoBot) {
-      console.log(`🤖 Auto-bot enabled for conversation ${conversation.id}`);
+      console.log(`Auto-bot enabled for conversation ${conversation.id}`);
       try {
         // Generate bot response using RAG
         const botResponse = await RAGChatbot.generateResponse(
@@ -1156,7 +1152,7 @@ export async function processIncomingMessageDirect(
             },
           });
 
-          console.log(`✅ Bot message saved with ID: ${botMessage.id}`);
+          console.log(`Bot message saved with ID: ${botMessage.id}`);
 
           // Send bot response via Facebook API
           const pageAccessToken = await decrypt(
@@ -1206,16 +1202,16 @@ export async function processIncomingMessageDirect(
             );
           }
 
-          console.log(`✅ Bot response sent and emitted`);
+          console.log(`Bot response sent and emitted`);
         }
       } catch (botError) {
-        console.error("❌ Auto-bot response failed:", botError);
+        console.error("Auto-bot response failed:", botError);
       }
     }
 
-    console.log(`✅ Message processing completed for ${senderId}`);
+    console.log(`Message processing completed for ${senderId}`);
   } catch (error) {
-    console.error("❌ Message processing failed:", error);
+    console.error("Message processing failed:", error);
     throw error;
   }
 }
