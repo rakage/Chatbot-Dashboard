@@ -163,7 +163,66 @@ export default function ConversationsList({
     };
   }, [totalUnreadCount]);
 
-  // Simple socket connection status display
+  // Socket event handlers
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    console.log("🔌 ConversationsList: Setting up socket event listeners");
+
+    // Listen for conversation read events from other clients or server
+    const handleConversationRead = (data: {
+      conversationId: string;
+      userId: string;
+      timestamp: string;
+    }) => {
+      console.log(`📖 Received conversation:read event for ${data.conversationId} by user ${data.userId}`);
+      
+      // Update local conversation state to mark as read
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === data.conversationId
+            ? { ...conv, unreadCount: 0 }
+            : conv
+        )
+      );
+
+      // Update last seen map if it was the current user
+      if (session?.user?.id === data.userId) {
+        const readTime = new Date(data.timestamp);
+        setLastSeenMap(prev => {
+          const updated = new Map(prev);
+          updated.set(data.conversationId, readTime);
+          return updated;
+        });
+
+        // Remove from newly unread conversations
+        setNewlyUnreadConversations(prev => {
+          const updated = new Set(prev);
+          updated.delete(data.conversationId);
+          return updated;
+        });
+
+        // Update total unread count
+        setConversations(currentConversations => {
+          const newTotalUnread = currentConversations.reduce(
+            (sum, conv) => sum + (conv.id === data.conversationId ? 0 : conv.unreadCount),
+            0
+          );
+          setTotalUnreadCount(newTotalUnread);
+          return currentConversations;
+        });
+      }
+    };
+
+    socket.on("conversation:read", handleConversationRead);
+
+    return () => {
+      console.log("🔌 ConversationsList: Cleaning up socket event listeners");
+      socket.off("conversation:read", handleConversationRead);
+    };
+  }, [socket, isConnected, session?.user?.id]);
+
+  // Socket connection status display
   useEffect(() => {
     console.log("🔌 ConversationsList: Socket connection status:", {
       isConnected,
@@ -482,6 +541,17 @@ export default function ConversationsList({
 
       if (response.ok) {
         console.log(`✅ Conversation ${conversationId} marked as read`);
+
+        // Refresh lastSeenMap to ensure consistency
+        if (session?.user?.id) {
+          try {
+            const refreshedLastSeen = await LastSeenService.getUserLastSeen(session.user.id);
+            setLastSeenMap(refreshedLastSeen);
+            console.log(`🔄 Refreshed lastSeenMap after marking conversation ${conversationId} as read`);
+          } catch (error) {
+            console.warn("Failed to refresh lastSeenMap:", error);
+          }
+        }
 
         // Emit socket event to notify other clients
         if (socket) {

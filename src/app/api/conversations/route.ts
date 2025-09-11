@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { LastSeenService } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,6 +30,14 @@ export async function GET(request: NextRequest) {
 
     if (status && status !== "ALL") {
       whereClause.status = status;
+    }
+
+    // Get user's last seen timestamps from Supabase for accurate unread calculation
+    let lastSeenMap: Map<string, Date> = new Map();
+    try {
+      lastSeenMap = await LastSeenService.getUserLastSeen(session.user.id);
+    } catch (error) {
+      console.warn("Could not fetch last seen data from Supabase:", error);
     }
 
     // Fetch conversations with message counts and last messages
@@ -61,9 +70,28 @@ export async function GET(request: NextRequest) {
     const conversationSummaries = conversations.map((conv) => {
       const lastMessage = conv.messages[0];
 
-      // Calculate unread count (simplified - in real app, track read status per user)
-      const unreadCount =
-        conv.assigneeId === session.user.id ? 0 : conv._count.messages;
+      // Calculate unread count using Supabase last seen data (prioritized) or fallback to metadata
+      let unreadCount = 0;
+      const lastMessageTime = conv.lastMessageAt;
+      
+      // First, check Supabase last seen data
+      const supabaseLastSeen = lastSeenMap.get(conv.id);
+      
+      if (supabaseLastSeen) {
+        // User has seen this conversation in Supabase - check if there are new messages
+        if (lastMessageTime > supabaseLastSeen) {
+          unreadCount = 1; // Show 1 if there are unread messages since last seen
+        }
+      } else if (conv.meta && (conv.meta as any).lastReadAt && (conv.meta as any).lastReadBy === session.user.id) {
+        // Fallback to conversation metadata
+        const metadataLastRead = new Date((conv.meta as any).lastReadAt);
+        if (lastMessageTime > metadataLastRead) {
+          unreadCount = 1;
+        }
+      } else {
+        // User has never read this conversation - show as unread but cap the display number
+        unreadCount = Math.min(conv._count.messages, 5);
+      }
 
       // Get customer profile from metadata if available
       const customerProfile = (conv.meta as any)?.customerProfile;
@@ -83,7 +111,7 @@ export async function GET(request: NextRequest) {
         customerProfile: customerProfile || null,
         lastMessageAt: conv.lastMessageAt.toISOString(),
         messageCount: conv._count.messages,
-        unreadCount: Math.min(unreadCount, 5), // Cap at 5 for display
+        unreadCount: unreadCount,
         lastMessage: lastMessage
           ? {
               text: lastMessage.text,

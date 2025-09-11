@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { socketService } from "@/lib/socket";
+import { LastSeenService } from "@/lib/supabase";
 
 export async function GET(
   request: NextRequest,
@@ -133,6 +134,7 @@ export async function PATCH(
       }
 
       // Update conversation to mark as read by this user
+      const currentTimestamp = new Date().toISOString();
       const updatedConversation = await db.conversation.update({
         where: { id: conversationId },
         data: {
@@ -140,10 +142,19 @@ export async function PATCH(
           meta: {
             ...((conversation.meta as any) || {}),
             lastReadBy: session.user.id,
-            lastReadAt: new Date().toISOString(),
+            lastReadAt: currentTimestamp,
           },
         },
       });
+
+      // Also update Supabase last seen for consistency
+      try {
+        await LastSeenService.updateLastSeen(session.user.id, conversationId, new Date());
+        console.log(`✅ Updated Supabase last seen for conversation ${conversationId}`);
+      } catch (supabaseError) {
+        console.warn(`⚠️ Failed to update Supabase last seen for conversation ${conversationId}:`, supabaseError);
+        // Don't fail the request if Supabase update fails
+      }
 
       console.log(
         `✅ Conversation ${conversationId} marked as read by user ${session.user.id}`
